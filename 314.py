@@ -13,38 +13,37 @@ import threading
 
 app = pg.mkQApp()
 plt = pg.plot()
-plt.setYRange(0, 500)
-plt.setXRange(0, 500)
+plt.setYRange(1, 500)
+plt.setXRange(1, 500)
 
-# make a triangle
-x = [200, 300, 400, 200, 200, 200]
-y = [200, 200, 200, 400, 300, 200]
-tri = np.matrix([x, y])
-x, y = tri.getA()
-plt.plot(x, y)
+# make the top sector
+y = np.append(400*np.ones(100), 500*np.ones(150))
+x = np.append(np.array(range(1, 501)), np.array(range(1, 501))[::-1])
+x = np.append(x, 1)
+plt.plot(y)
 
-import time
+def mirror(coord):
+    for i in range(50):
+        y[i] = r.randint(251, 500)
+    top = np.append(y, y[::-1])
+    top = np.append(top, 501-top)
+    top = np.append(top, top[0])
+    return top
 
-def rotate():
-    """Rotates the matrix clockwise 90 degrees
-    WARNING: loop cannot be broken from console, to break by hand you have
-    to remove tri from the variable explorer"""
-    global tri
-    rot = np.matrix([[0, 1], [-1, 0]])
-    while 1:
-        tri = 250.5 + rot.dot((tri-250.5))
-        time.sleep(0.4)
-        if not plt.isVisible():
-            timer.stop()
-            break
+#plt.plot(x, mirror(y), clear=True)
 
-thread = threading.Thread(target=rotate)
+import random as r
 
 def update():
-    x, y = tri.getA()
-    plt.plot(x, y, clear=True)
+    for i in range(50):
+        y[i] = r.randint(251, 500)
+    top = np.append(y, y[::-1])
+    top = np.append(top, 501-top)
+    top = np.append(top, top[0])
+    plt.plot(x, top, clear=True)
+    if not plt.isVisible():
+        timer.stop()
 
-thread.start()
 timer = pg.QtCore.QTimer()
 timer.timeout.connect(update)
-timer.start(1000)
+timer.start(500)
