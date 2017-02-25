@@ -9,30 +9,42 @@ Created on Fri Feb 24 20:43:04 2017
 
 import pyqtgraph as pg
 import numpy as np
+import threading
 
 app = pg.mkQApp()
 plt = pg.plot()
 plt.setYRange(0, 500)
 plt.setXRange(0, 500)
 
-# make a square
-x = [1, 1, 500, 500]
-y = [1, 500, 500, 1]
-sq = np.matrix([x, y])
-x, y = sq.getA()
+# make a triangle
+x = [200, 300, 400, 200, 200, 200]
+y = [200, 200, 200, 400, 300, 200]
+tri = np.matrix([x, y])
+x, y = tri.getA()
 plt.plot(x, y)
 
+import time
+
+def rotate():
+    """Rotates the matrix clockwise 90 degrees
+    WARNING: loop cannot be broken from console, to break by hand you have
+    to remove tri from the variable explorer"""
+    global tri
+    rot = np.matrix([[0, 1], [-1, 0]])
+    while 1:
+        tri = 250.5 + rot.dot((tri-250.5))
+        time.sleep(0.4)
+        if not plt.isVisible():
+            timer.stop()
+            break
+
+thread = threading.Thread(target=rotate)
 
 def update():
-    global sq
-    rot = np.matrix([[0, 1], [-1, 0]])
-    sq = 250.5 + rot.dot((sq-250.5))
-    x, y = sq.getA()
+    x, y = tri.getA()
     plt.plot(x, y, clear=True)
-    
-    if not plt.isVisible():
-        timer.stop()
 
+thread.start()
 timer = pg.QtCore.QTimer()
 timer.timeout.connect(update)
 timer.start(1000)
