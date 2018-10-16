@@ -15,57 +15,56 @@ def make_P_init(n):
     y = x*0 + 250
     return np.vstack((x, y)).T
 
-def lengths(P):
-    """outputs the lengths of each line in the segment, given coordinates P
+def length(P):
+    """outputs the perimeter, given coordinates P
     P0 is (x0, 250), and Pe is the last coordinate before the line of symmetry"""
     L = np.zeros(len(P)+1) # L = lengths of each line
-    L[0] = P[0][0]
+    L[0] = P[0][0]*8
     xe, ye = P[-1]
-    L[-1] = np.sqrt((ye**2 + xe**2 - 2*ye*xe)/2)
+    L[-1] = np.sqrt((ye**2 + xe**2 - 2*ye*xe)*32)
     
     if len(P) == 1:
-        return L
+        return np.sum(L)
     
     dP = (P[1:] - P[:-1]).transpose()
-    L[1:-1] = np.sqrt(dP[0]**2 + dP[1]**2)
-    return L
+    L[1:-1] = np.sqrt(64*(dP[0]**2 + dP[1]**2))
+
+    return np.sum(L)
 
 
-def area(P, L):
-    """the area under the segment, given coordinate P
-    Finds the area using trigonometry
-    This is 1/8 of the true area"""
+def area(P):
+    """Finds the total area using the trapezium rule"""
     A = np.zeros(len(P) + 1) # areas of each triangle segment
-    #PT = P.transpose()
+
+    yi = np.sum(P[-1])/2    # coordinates of the symmetry intercept
+    P = np.vstack((P, np.array([yi, yi])))
+    A[0] = P[0][0]*250*8
     
-    A[0] = P[0][0]*125
-    A[-1] = L[-1]*np.sqrt(2)*(P[-1][0]+P[-1][1])/4
+    xs = P.T[0]
+    ys = P.T[1]
     
-    P = P.flatten()
-    
-    if len(P) == 1:
-        return A
-    
-    R = np.sqrt(np.sum(P**2, 1)) # distance of each point from the center
-    S = (R[1:] + R[:-1] + L[1:-1])/2
-    
-    A[1:-1] = np.sqrt(S*(S-R[1:])*(S-R[:1])*(S-L[1:-1]))
-    return A
+    A[1:] = (ys[1:]+ys[:-1])*(xs[1:]-xs[:-1])*4
+    return np.sum(A) - 4*yi**2
 
 
 def ratio(P):
     """Returns the ratio of area to perimeter"""
-    L = lengths(P)
-    A = area(P, L)
-    return np.sum(A)/np.sum(L)
+    L = length(P)
+    A = area(P)
+    return A/L
 
-def update(P, F, F_l, X_l):
+def update(P, F, F_l, X_L):
     """Updates the value of P using gradient descent"""
     # reshape P into a vector array of only the variables
     f_P = P.flatten()
     X = np.zeros(len(f_P)-1)
     X[0] = f_P[0]
     X[1:] = f_P[2:]
+    
+    X_f = X_L.flatten()
+    X_l = np.zeros(len(X_f)-1)
+    X_l[0] = X_f[0]
+    X_l[1:] = X_f[2:]
     
     #F = -ratio(P)  # the current function value
     
@@ -77,15 +76,18 @@ def update(P, F, F_l, X_l):
     ineq = (fd>=0)*(bd<=0)    # element=1 if point is a minima
     float_J = ((fd+bd)/2)*(1-ineq)  # stops non-zero derivatives appearing at minima
     y = np.sum((X - X_l)*(F - F_l))/np.sum((F - F_l)**2) #  Barzilai-Borwein
-    J = np.int(float_J*y)
-    J += (float_J!=0)*(J==0)*1*np.sign(float_J)
+    J = (float_J*y).astype(int) # or maybe .round() ?
+    print(J)
+    float_J *= y
+    print(float_J)
+    J += (float_J!=0)*(J==0)*1*np.sign(float_J) # i can't remember why i did this
     #print(J, ineq, fd, bd)
     
     X = X - J
     lim = X > 250   # =1 if element is over 250 (out of bounds)
     X = X*(1-lim) + 250*lim
     #print(X)
-    P = (np.insert(X, 1, 250)).reshape((int(len(X)+1/2), 2))
+    P = (np.insert(X, 1, 250)).reshape(int((len(X)+1)/2),2)
     
     return P, np.max(J**2)
 
@@ -113,7 +115,7 @@ def update0(P, F):
     #print(J, ineq, fd, bd)
     
     X = X - J
-    P = (np.insert(X, 1, 250)).reshape((int(len(X)+1/2), 2))
+    P = (np.insert(X, 1, 250)).reshape(int((len(X)+1)/2),2)
     
     return P, np.max(J**2)
     
@@ -123,7 +125,7 @@ def f_d(X):
     f_F = np.zeros(len(X))
     for v in range(0, len(f_X)):
         i = f_X[v]
-        P = (np.insert(i, 1, 250)).reshape((int((len(i)+1/2)/2), 2))
+        P = (np.insert(i, 1, 250)).reshape(int((len(i)+1)/2),2)
         f_F[v] = -ratio(P)
     return f_F
 
@@ -133,7 +135,7 @@ def b_d(X):
     f_F = np.zeros(len(X))
     for v in range(0, len(f_X)):
         i = f_X[v]
-        P = (np.insert(i, 1, 250)).reshape((int((len(i)+1/2)/2), 2))
+        P = (np.insert(i, 1, 250)).reshape(int((len(i)+1)/2),2)
         f_F[v] = -ratio(P)
     return f_F
 
@@ -142,7 +144,8 @@ def opt(P):
     Ra = ratio(P)
     #cost = 10
     P, cost = update0(P, -Ra)
+    print(Ra, P, cost)
     while cost > 0: # there's a chance this might osciallate around the answer
-        P, cost = update(P, -Ra)
+        P, cost = update(P, -Ra, cost, P)
         Ra = ratio(P)
         print(Ra, P, cost)
