@@ -11,12 +11,15 @@ import numpy as np
 import scipy.optimize as op
 import bokeh.plotting as plt
 
+res = ""
+
 
 def make_P_init(n):
     """makes an initial set of P with n values"""
     x = np.linspace(0, 250, n+2)[1:-1]
     y = x*0 + 250
     return np.vstack((x, y)).T
+
 
 def length(P):
     """outputs the perimeter, given coordinates P
@@ -52,9 +55,12 @@ def area(P):
 
 def ratio(P):
     """Returns the ratio of area to perimeter"""
+    if len(P.shape)==1:
+        P = (np.insert(P, 1, 250)).reshape(int((len(P)+1)/2),2)
     L = length(P)
     A = area(P)
     return A/L
+
 
 def opt(P):
     """optimises using scipy because fuck it"""
@@ -63,7 +69,8 @@ def opt(P):
     x0[0] = P[0]
     x0[1:] = P[2:]
     b = [(0, 250)]*len(x0)
-    return op.minimize(func, x0, bounds=b)
+    return op.minimize(func, x0, bounds=b, options={"maxfun": 10**5})
+
 
 def func(x):
     """scipy-friendly cost function"""
@@ -76,20 +83,41 @@ def func(x):
 # =============================================================================
     
     
-def iterate_opt(P):
-    """iterates opt() using the new coordinates found in next_P()"""    
-    r = ratio(P)
-    print(r)
-    out_r = 0
-    P_next = P
-    while ((out_r < r) and (out_r != r)):
-        r = out_r
-        out = opt(make_P_init(len(P_next)+1))
-        out_p = (out.x).round() 
-        P_next = (np.insert(out_p, 1, 250)).reshape(int((len(out_p)+1)/2),2)
-        out_r = ratio(P_next)
-        print(len(P_next), out_r)
+# =============================================================================
+# def iterate_opt(P):
+#     """iterates opt() using the new coordinates found in next_P()
+#     doesn't seem to be functional"""    
+#     r = ratio(P)
+#     print(r)
+#     out_r = 0
+#     P_next = P
+#     while ((out_r < r) and (out_r != r)):
+#         r = out_r
+#         out = opt(make_P_init(len(P_next)+1))
+#         out_p = (out.x).round() 
+#         P_next = (np.insert(out_p, 1, 250)).reshape(int((len(out_p)+1)/2),2)
+#         out_r = ratio(P_next)
+#         print(len(P_next), out_r)
+# =============================================================================
 
+def it_opt(X):
+    """scipy-friendly wrapper for opt()"""
+    #P = (np.insert(X, 1, 250)).reshape(int((len(X)+1)/2),2)
+    P = make_P_init(X)
+    #opres = opt(P)
+    global res
+    res = opt(P)
+    #print((len(res.x)+1)/2)
+    rat = np.round(res.x)
+    if rat[-1] >= rat[-2]:
+        rat = rat[:-2]
+    return np.round(ratio(rat), 8) #float(opres.fun)
+    
+
+def iterate(n=20):
+    """optimises the optimisation"""
+    return op.minimize(it_opt, n, options={"maxfun": 10**5, "eps": 1})
+    
 
 def plot(P):
     """Plots the quater graph made by P.
@@ -101,7 +129,14 @@ def plot(P):
     graph.line(np.hstack((x, y[::-1])), np.hstack((y, x[::-1])))
     plt.show(graph)
     
-    
+def fuck_it(stop=100, start=2):
+    """fuck it, no optimisation, no iteration, this function will just do
+    it_opt() for every single value between start and stop"""
+    opt_res = []
+    for i in range(start, stop+1):
+        opt_res.append(it_opt(i))
+        print(i)
+    return opt_res
 
 """Junk ahoy!"""
 # =============================================================================
