@@ -5,11 +5,34 @@ Created on Sun Jun 17 15:16:26 2018
 @author: Jack
 
 project euler problem 314
+
+Note: this attempt is not the first: the first attempt tried to find the largest
+corner and squash it down. The idea is that sharp corners add more perimeter
+than area, so the ratio can be improved by squashing the to remove some of the
+perimeter.
+    The current attempt was inspired when I was reading into Tikhonov
+regularization. The script optimizes an initial set of coordinates, then
+generates a new set of coordinates by finding the largest corner and splitting
+it. If this process continues indefinitely and without being bounded to integer
+space, the end result would be a continuous curve.
+    There are a couple of assumptions that grew out of the squashing-corner
+idea, which is that any section of perimeter that crosses a line of symmetry
+should be tangential to that line of symmetry. However, this appears to be
+not strictly true: it appears to be true for diagonal (x=y) symmetry, but an
+optimum y value for the vertical symmetry (x=0) is over 250, so y1=250 is still
+valid thank christ.
+    A better approach than splitting corners might be to put a corner into a
+long flat, and let it grow into an optimally-shaped corner. However, given the
+optimisation procedures, it shouldn't really matter how the new coordinates are
+placed because if a new coordinate is badly placed, it'll be reshuffled anyway.
+The coordinate placement routine is mostly just to try to take some load of the
+optimisation routines.
 """
 
 import numpy as np
 import scipy.optimize as op
 import bokeh.plotting as plt
+
 
 class q_314():
     """The previous script put into a class. This removes the need for P being
@@ -31,21 +54,31 @@ class q_314():
         self.ratio = None
     
     def run(self):
+        """one day, this will grow into a beautiful function, but not yet"""
         self.optimise()
         
     
     def find_lengths(self):
         """outputs the perimeter, given coordinates P
-        P0 is (x0, 250), and Pe is the last coordinate before the line of symmetry"""
+        P0 is (x0, 250), and Pe is the last coordinate before the line of symmetry
+        TODO: if doesn't work, re-write so that yi is added to P like in find_area()"""
         P = self.P
-        L = np.zeros(len(P)+1) # L = lengths of each line
-        L[0] = P[0][0]*8
-        xe, ye = P[-1]
-        L[-1] = np.sqrt((ye**2 + xe**2 - 2*ye*xe)*32)
+        no_i = np.diff(P[-1])[0] > 0    # test for if there is a coordinate on x=y
         
+        if no_i:
+            L = np.zeros(len(P)+1) # L = lengths of each line
+            xe, ye = P[-1]
+            L[-1] = np.sqrt((ye**2 + xe**2 - 2*ye*xe)*32)
+        else:
+            L = np.zeros(len(P))
+        
+        L[0] = P[0][0]*8
         if len(P) != 1:
             dP = (P[1:] - P[:-1]).transpose()
-            L[1:-1] = np.sqrt(64*(dP[0]**2 + dP[1]**2))
+            if no_i:
+                L[1:-1] = np.sqrt(64*(dP[0]**2 + dP[1]**2))
+            else:
+                L[1:] = np.sqrt(64*(dP[0]**2 + dP[1]**2))
         
         self.lengths = L
         self.perimeter = np.sum(L)
@@ -53,10 +86,15 @@ class q_314():
     def find_area(self):
         """Finds the total area using the trapezium rule"""
         P = self.P
-        A = np.zeros(len(P) + 1) # areas of each triangle segment
+        no_i = np.diff(P[-1])[0] > 0    # test for if there is a coordinate on x=y
         
-        yi = np.sum(P[-1])/2    # coordinates of the symmetry intercept
-        P = np.vstack((P, np.array([yi, yi])))
+        A = np.zeros(len(P) + no_i) # areas of each triangle segment
+        
+        if no_i:
+            yi = np.sum(P[-1])/2    # coordinates of the symmetry intercept
+            P = np.vstack((P, np.array([yi, yi])))
+        else:
+            yi = P[-1][1]
         A[0] = P[0][0]*250*8
         
         xs = P.T[0]
@@ -103,7 +141,7 @@ class q_314():
     def func(self, x):
         """scipy-friendly cost function for optimise()
         the jacobian must be the second returned variable, or scipy throws
-        a hissy fit (is the jacobian is passed straight to .optimise(), it
+        a hissy fit (if the jacobian is passed straight to .optimise(), it
         doesn't get recognised as a callable function by l-bfgs-b and it will
         assume the gradient is tacked on to this function"""
         self.P = (np.insert(x, 1, 250)).reshape(int((len(x)+1)/2),2)
@@ -173,75 +211,54 @@ class q_314():
     def next_P_lengths(self):
         """makes a new P by finding the longest length then splitting it.
         to be used if next_P() gets stuck in a loop
-        TODO: finish"""
+        TODO: make"""
     
     def del_lengths(self):
-        """finds the gradient of the lengths
-        TODO: make it work proper"""
-# =============================================================================
-#         if P_in is None:
-#             P = self.P
-#             P_in = np.zeros(len(P)*2 - 1)
-#             P_in[0] = P[0, 0]
-#             P_in[1:] = (P.flatten())[2:]
-#         else:
-#             P = (np.insert(P_in, 1, 250)).reshape(int((len(P_in)+1)/2),2)
-#             self.P = P
-#         if P_in is not None:
-#             P = (np.insert(P_in, 1, 250)).reshape(int((len(P_in)+1)/2),2)
-#             self.P = P
-#         else:
-#             P = self.P
-#         self.find_lengths()
-# =============================================================================
+        """finds the gradient of the lengths"""
         lengths = self.lengths/8
         
         P = self.P
+        no_i = np.diff(P[-1])[0] > 0    # test for if there is a coordinate on x=y
         
-        Pi = np.sum(P[-1])/2
-        fP = np.vstack((np.array([0, 250]), P, np.array([1, 1])*Pi))
-# =============================================================================
-#         LHS = np.zeros(2*len(P) -1)
-#         RHS = np.zeros(2*len(P) -1)
-#         LHS[0] = 1
-#         ddP = P[1:] - P[:-1]    # double-delta-P makes sense in flattened form
-#         print("ddP: {}".format(ddP))
-#         ddP = ddP/np.vstack((lengths[1:-1], lengths[1:-1])).T
-#         flat_ddP = ddP.flatten()
-#         print("lengths: {}".format(np.vstack((lengths[1:-1], lengths[1:-1])).T))
-#         print("flat_ddP: {}".format(flat_ddP))
-#         #print(LHS, RHS, flat_ddP)
-#         LHS[1:] = flat_ddP[0]
-#         LHS[2:] = flat_ddP[2:-3]
-#         
-#         RHS[0] = flat_ddP[0]
-#         RHS[1:-2] = flat_ddP[2:]
-#         RHS[-2] = ((P_in[-2:][0] - P_in[-2:][1])/(2*lengths[-1]))/2
-#         RHS[-1] = -RHS[-2]
-#         #RHS = RHS * np.append(1, np.tile(np.array([1, -1]), int(len(RHS)/2)))
-#         print("LHS: {} \n RHS: {}".format(LHS, RHS))
-#         return 8*(LHS - RHS)
-# =============================================================================
+        if no_i:
+            Pi = np.sum(P[-1])/2
+            fP = np.vstack((np.array([0, 250]), P, np.array([1, 1])*Pi))
+        else:
+            fP = np.vstack((np.array([0, 250]), P))
         ddP = fP[1:] - fP[:-1]
         ddP2 = ddP/np.vstack((lengths, lengths)).T
         dels = (ddP2[:-1] - ddP2[1:]).flatten()
+        #print(ddP)
+        #print(8*(ddP)/lengths[-1])
         del_out = np.zeros(len(dels)-1)
         del_out[0] = dels[0]
         del_out[1:] = dels[2:]
-        return del_out*8
+        if no_i:
+            return del_out*8
+        else:
+            return np.append(del_out, (ddP[-1])/lengths[-1])*8
     
     def del_area(self):
         """Finds the gradient of the area"""
         P = self.P
+        no_i = np.diff(P[-1])[0] > 0    # test for if there is a coordinate on x=y
+        
         Pi = np.sum(P[-1])/2
         fP = np.vstack((np.array([0, 250]), P, np.array([1, 1])*Pi))
+        
+        if no_i:
+            dels_end = 4*np.array([fP[-3, 1]-fP[-2, 0], fP[-2, 1]-fP[-3, 0]])
+        else:
+            #fP = np.vstack((np.array([0, 250]), P))
+            dels_end = 4*np.array([P[-2, 1], -P[-2, 0]])
+        
         ddP = fP[2:] - fP[:-2]
         #print("ddP: {}".format(ddP*4))
         dels = 4*np.vstack((-ddP[:, 1], ddP[:, 0])).T
         #print("del_area: {}".format(4*np.vstack((-ddP[:, 1], ddP[:, 0]))))
         #print("flat del_area: {}".format((4*np.vstack((-ddP[:, 1], ddP[:, 0])).T).flatten()))
-        dels_end = 4*np.array([fP[-3, 1]-fP[-2, 0], fP[-2, 1]-fP[-3, 0]])
-        #dels_end = 4*np.array([P[-2, 1]-P[-1, 0], P[-1, 1]-P[-2, 0]])
+        
+        #dels_end = 4*np.array([fP[-3, 1]-fP[-2, 0], fP[-2, 1]-fP[-3, 0]])
         flat_dels = dels.flatten()
         if len(P.flatten()) == 2:
             return dels_end[0]
@@ -273,17 +290,11 @@ class q_314():
 
 
 
-
-
-result = None
-
-
-def test_del_lengths(n=None, eps=10**-5):
-    """a function that brute-forces the jacobian to test the math.`
-    TODO: finish for all of the jacobian"""
+def test_dels(n=None, eps=10**-7):
+    """a function that brute-forces the gradients to test the math."""
     proj = q_314()
     if n is None:
-        proj.P = np.array([[ 50., 250.], [100., 230.], [150., 215.], [200., 210.]])
+        proj.P = np.array([[ 50., 250.], [100., 230.], [150., 215.], [200., 200.]])
     else:
         proj.make_P_init(n)
     
@@ -338,58 +349,6 @@ def test_del_lengths(n=None, eps=10**-5):
     print("\n")
 
 
-
-
-
-
-
-
-
-
-
-
-
-def next_P(P):
-    """finds the biggest corner, then splits it and optimizes again"""
-    
-    
-    
-# =============================================================================
-# def iterate_opt(P):
-#     """iterates opt() using the new coordinates found in next_P()
-#     doesn't seem to be functional"""    
-#     r = ratio(P)
-#     print(r)
-#     out_r = 0
-#     P_next = P
-#     while ((out_r < r) and (out_r != r)):
-#         r = out_r
-#         out = opt(make_P_init(len(P_next)+1))
-#         out_p = (out.x).round() 
-#         P_next = (np.insert(out_p, 1, 250)).reshape(int((len(out_p)+1)/2),2)
-#         out_r = ratio(P_next)
-#         print(len(P_next), out_r)
-# =============================================================================
-
-def it_opt(X):
-    """scipy-friendly wrapper for opt()"""
-    #P = (np.insert(X, 1, 250)).reshape(int((len(X)+1)/2),2)
-    P = make_P_init(X)
-    #opres = opt(P)
-    global result
-    result = opt(P)
-    #print((len(result.x)+1)/2)
-    rat = np.round(result.x)
-    if rat[-1] >= rat[-2]:
-        rat = rat[:-2]
-    return np.round(ratio(rat), 8) #float(opres.fun)
-    
-
-def iterate(n=20):
-    """optimises the optimisation"""
-    return op.minimize(it_opt, n, options={"maxfun": 10**5, "eps": 1})
-    
-
 def plot(P):
     """Plots the quater graph made by P.
     If P is in the flattened form, it's reshaped to coordinate form"""
@@ -400,111 +359,26 @@ def plot(P):
     graph.line(np.hstack((x, y[::-1])), np.hstack((y, x[::-1])))
     plt.show(graph)
     
-def fuck_it(stop=100, start=2):
-    """fuck it, no optimisation, no iteration, this function will just do
-    it_opt() for every single value between start and stop"""
-    opt_res = []
-    for i in range(start, stop+1):
-        opt_res.append(it_opt(i))
-        print(i)
-    return opt_res
-
-"""Junk ahoy!"""
-# =============================================================================
-# def update(P, F, F_l, X_L):
-#     """Updates the value of P using gradient descent"""
-#     # reshape P into a vector array of only the variables
-#     f_P = P.flatten()
-#     X = np.zeros(len(f_P)-1)
-#     X[0] = f_P[0]
-#     X[1:] = f_P[2:]
-#     
-#     X_f = X_L.flatten()
-#     X_l = np.zeros(len(X_f)-1)
-#     X_l[0] = X_f[0]
-#     X_l[1:] = X_f[2:]
-#     
-#     #F = -ratio(P)  # the current function value
-#     
-#     fd = f_d(X) - F
-#     bd = F - b_d(X)
-#     
-#     # finding the Jacobian matrix i.e. grad(-ratio)
-#     # it looks messy as hell, but it's faster than using for loops
-#     ineq = (fd>=0)*(bd<=0)    # element=1 if point is a minima
-#     float_J = ((fd+bd)/2)*(1-ineq)  # stops non-zero derivatives appearing at minima
-#     y = np.sum((X - X_l)*(F - F_l))/np.sum((F - F_l)**2) #  Barzilai-Borwein
-#     J = (float_J*y).astype(int) # or maybe .round() ?
-#     print(J)
-#     float_J *= y
-#     print(float_J)
-#     J += (float_J!=0)*(J==0)*1*np.sign(float_J) # i can't remember why i did this
-#     #print(J, ineq, fd, bd)
-#     
-#     X = X - J
-#     lim = X > 250   # =1 if element is over 250 (out of bounds)
-#     X = X*(1-lim) + 250*lim
-#     #print(X)
-#     P = (np.insert(X, 1, 250)).reshape(int((len(X)+1)/2),2)
-#     
-#     return P, np.max(J**2)
-# 
-# def update0(P, F):
-#     """a function for the first iteration. is needed because the gamma varibale
-#     is found using the gradient of the last iteration, which obviously doesn't
-#     exist for the first one"""
-#     # reshape P into a vector array of only the variables
-#     f_P = P.flatten()
-#     X = np.zeros(len(f_P)-1)
-#     X[0] = f_P[0]
-#     X[1:] = f_P[2:]
-#     
-#     #F = -ratio(P)  # the current function value
-#     
-#     fd = f_d(X) - F
-#     bd = F - b_d(X)
-#     
-#     # finding the Jacobian matrix i.e. grad(-ratio)
-#     # it looks messy as hell, but it's faster than using for loops
-#     ineq = (fd>=0)*(bd<=0)    # element=1 if point is a minima
-#     float_J = ((fd+bd)/2)*(1-ineq)  # stops non-zero derivatives appearing at minima
-#     
-#     J = np.sign(float_J)
-#     #print(J, ineq, fd, bd)
-#     
-#     X = X - J
-#     P = (np.insert(X, 1, 250)).reshape(int((len(X)+1)/2),2)
-#     
-#     return P, np.max(J**2)
-#     
-# def f_d(X):
-#     """calculates the forward derivatives given X"""
-#     f_X = np.eye(len(X)) + X
-#     f_F = np.zeros(len(X))
-#     for v in range(0, len(f_X)):
-#         i = f_X[v]
-#         P = (np.insert(i, 1, 250)).reshape(int((len(i)+1)/2),2)
-#         f_F[v] = -ratio(P)
-#     return f_F
-# 
-# def b_d(X):
-#     """calculates the forward derivatives given X"""
-#     f_X = X - np.eye(len(X))
-#     f_F = np.zeros(len(X))
-#     for v in range(0, len(f_X)):
-#         i = f_X[v]
-#         P = (np.insert(i, 1, 250)).reshape(int((len(i)+1)/2),2)
-#         f_F[v] = -ratio(P)
-#     return f_F
-# 
-# def opt(P):
-#     """optimises P to maximise ratio, using update()"""
-#     Ra = ratio(P)
-#     #cost = 10
-#     P, cost = update0(P, -Ra)
-#     print(Ra, P, cost)
-#     while cost > 0: # there's a chance this might osciallate around the answer
-#         P, cost = update(P, -Ra, cost, P)
-#         Ra = ratio(P)
-#         print(Ra, P, cost)
-# =============================================================================
+def opt_i():
+    """a function to determine if a point on x=y can be more optimum than a
+    tangent across the intercept.
+    xn, yn are the last coordinates assuming there is no corner on the intercept.
+    i is a corner point on the intercept
+    vn are variables made without i, vi are variables made with i
+    v_dx are variables made replacing yn with xn+dx"""
+    import sympy as sy
+    sy.init_printing()
+    xn, yn, i, dx, S = sy.symbols("xn yn i dx S", positive=True)
+    Li = sy.sqrt((i-xn)**2 + (i-yn)**2)
+    Ai = (yn-xn)*(sy.sqrt(2) + 2*i - (xn+yn))/2*sy.sqrt(2)
+    Li_dx = sy.sqrt((i-xn)**2 + (i-xn-dx)**2)
+    Ai_dx = (dx)*(sy.sqrt(2) + 2*i - (2*xn+dx))/2*sy.sqrt(2)
+    Ri = Ai/Li
+    Ri_dx = Ai_dx/Li_dx
+    
+    Rn = (yn-xn)/2*sy.sqrt(2)
+    Rn_dx = (dx)/2*sy.sqrt(2)
+    
+    solve = sy.solve(sy.diff(Ri, i), i)
+    solve_dx = sy.solve(sy.diff(Ri_dx, i), i)
+    
