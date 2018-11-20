@@ -27,11 +27,23 @@ optimisation procedures, it shouldn't really matter how the new coordinates are
 placed because if a new coordinate is badly placed, it'll be reshuffled anyway.
 The coordinate placement routine is mostly just to try to take some load of the
 optimisation routines.
+    There is an important question that might be asked, which is that, if I'm
+trying to show off (which I obviously am), why have I not bothered to reformulate
+the fractional problem into a linear program? The answer is that the methods
+are either not compatible with integer programming (i.e. Charnes-Cooper
+transform), or requires more iterative steps than a third-party MIP solver would
+allow (i.e. Dinkelbach’s Transform) and I really don't want to make my own
+Branch and Bound algorithm when there are third party solvers availlable for free.
+Also, both halves of the fraction are non-linear so would have to be linearised
+anyway, so there really isn't any benefit of reformulating the fraction to a
+linear program.
 """
 
 import numpy as np
 import scipy.optimize as op
 import bokeh.plotting as plt
+import pyomo.environ as pyo
+import cvxpy as cvx
 
 
 class q_314():
@@ -52,6 +64,9 @@ class q_314():
         self.perimeter = None
         self.area = None
         self.ratio = None
+        
+        self.dR = None
+        self.flat_P = None
     
     def run(self):
         """one day, this will grow into a beautiful function, but not yet"""
@@ -149,26 +164,11 @@ class q_314():
         return -self.ratio, -self.del_ratio()
     
     def next_P(self):
-        """Makes a new P by finding the sharpest corner and splitting it.
-        If the end coordinate is too close to the line, it gets trimmed and ignored,
-            and the function will make a new P with the same length as the
-            old P. There is a risk that the routine could get stuck at one length,
-            so there should be a check to see if the length of the coordinates
-            isn't growing, then use a different method to make new coordinates
-            TODO: store previous coordinate sizes to test for sticking"""
+        """Makes a new P by finding the sharpest corner and splitting it."""
         P = self.P
         self.P_old = P          # good to have just in case
         
         yi = np.sum(P[-1])/2    # coordinates of the symmetry intercept
-        
-# =============================================================================
-#         if np.diff(P[-1]) < 2:  # trim off the end coordinate if it's too close to x=y
-#             #P_split = P[:-1]
-#             """this could cause the script to stuck at one length"""
-#             P_split = np.vstack((P[:-1], np.array([yi, yi])))
-#         else:
-#             P_split = np.vstack((P, np.array([yi, yi])))
-# =============================================================================
         
         P_split = np.vstack((P, np.array([yi, yi])))
         
@@ -287,6 +287,45 @@ class q_314():
             return del_r
         else:
             return np.array([del_r])
+    
+    def lin_R(self, U):
+        """a linearised form of ratio(), suitable for linear MIP solvers. it
+        uses the currently stored value of P, which should be updated only after
+        each solve is completed. This should be an issue as a third-party solver
+        isn't going to touch self.P, but if it is, this function can be
+        reformulated as a class so that it can hold on to its own initial P
+            U is a flattened, updated form of P"""
+        R0 = self.ratio
+        dR = self.dR
+        P0 = self.flat_P
+        return R0 + np.dot((U-P0), dR)
+        
+    def init_lin_R(self):
+        """initiates the variables used in lin_R. Must be called at the
+        beginning of the MIP cycle.
+        The variables are initiated in a seperate function so that they don't
+        get re-computed every time lin_R() is called
+        """
+        self.find_ratio()
+        self.dR = self.del_ratio()
+        self.flat_P = np.delete(self.P, 1)
+        
+    def MIP(self, tol=10):
+        """maximises the ratio in integer space
+        TODO: if cvxpy doesn't like my objective, move the lin_R stuff into this
+        function"""
+        self.P_old = self.P*0
+        #p_last = self.P_old
+        #model = pyo.ConcreteModel()
+        #while p_last != self.P:
+        self.init_lin_R()
+        self.flat_P = np.delete(self.P, 1)
+        flat_P = self.flat_P
+        U = cvx.Variable(len(flat_P))
+        objective = cvx.Maximize(self.lin_R(U))
+        constraints = [flat_P-tol <= U, U <= flat_P+tol]
+        prob = cvx.Problem(objective, constraints)
+        
 
 
 
