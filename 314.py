@@ -52,7 +52,7 @@ class q_314():
     everything a global variable"""
     def __init__(self, P_init=np.array([[250-75, 250]])):
         self.result = None
-        self.old_result = None
+        self.old_result = None      # is this being used?
         
         if type(P_init) is not np.ndarray:
             self.P = self.make_P_init(P_init)
@@ -67,10 +67,13 @@ class q_314():
         
         self.dR = None
         self.flat_P = None
+        
+        self.run()
     
     def run(self):
         """one day, this will grow into a beautiful function, but not yet"""
         self.optimise()
+        #self.MIP()
         
     
     def find_lengths(self):
@@ -125,16 +128,25 @@ class q_314():
         self.P = np.vstack((x, y)).T
         return self.P
 
-    def find_ratio(self):
+    def find_ratio(self, P_in=None):
         """Returns the ratio of area to perimeter"""
         #if len(P.shape)==1:
         #    P = (np.insert(P, 1, 250)).reshape(int((len(P)+1)/2),2)
+        if P_in is not None:
+            P = (np.insert(P_in, 1, 250)).reshape(int((len(P_in)+1)/2),2)
+            self.P = P
         self.find_area()
         self.find_lengths()
         self.ratio = self.area/self.perimeter
     
     def optimise(self):
-        """optimises using scipy because fuck it"""
+        """optimises using scipy because fuck it.
+        note that this function doesn't force x<=y. this is because it isn't
+        necessary to make this bound explicit: it just does it itself. because
+        x<=y isn't an explicit bound, the set of coordinates is an N dimensional
+        square with side of {0, 250}, and N = 2*number of coordinates - 1.
+        I don't know much about symmetry about hyperplanes, but I do know that
+        N dimensional squares are always symmetric"""
         #if type(P) is int:
         #    P = make_P_init(P)
         P = self.P
@@ -288,43 +300,133 @@ class q_314():
         else:
             return np.array([del_r])
     
-    def lin_R(self, U):
-        """a linearised form of ratio(), suitable for linear MIP solvers. it
-        uses the currently stored value of P, which should be updated only after
-        each solve is completed. This should be an issue as a third-party solver
-        isn't going to touch self.P, but if it is, this function can be
-        reformulated as a class so that it can hold on to its own initial P
-            U is a flattened, updated form of P"""
-        R0 = self.ratio
-        dR = self.dR
-        P0 = self.flat_P
-        return R0 + np.dot((U-P0), dR)
+# =============================================================================
+#     def lin_R(self, U):
+#         """a linearised form of ratio(), suitable for linear MIP solvers. it
+#         uses the currently stored value of P, which should be updated only after
+#         each solve is completed. This should be an issue as a third-party solver
+#         isn't going to touch self.P, but if it is, this function can be
+#         reformulated as a class so that it can hold on to its own initial P
+#             U is a flattened, updated form of P"""
+#         R0 = self.ratio
+#         dR = self.dR
+#         P0 = self.flat_P
+#         return R0 + np.sum((U-P0), dR)[0]
+#         
+#     def init_lin_R(self):
+#         """initiates the variables used in lin_R. Must be called at the
+#         beginning of the MIP cycle.
+#         The variables are initiated in a seperate function so that they don't
+#         get re-computed every time lin_R() is called
+#         """
+#         self.find_ratio()
+#         self.dR = self.del_ratio()
+#         self.flat_P = np.delete(self.P, 1)
+# =============================================================================
         
-    def init_lin_R(self):
-        """initiates the variables used in lin_R. Must be called at the
-        beginning of the MIP cycle.
-        The variables are initiated in a seperate function so that they don't
-        get re-computed every time lin_R() is called
-        """
-        self.find_ratio()
-        self.dR = self.del_ratio()
-        self.flat_P = np.delete(self.P, 1)
-        
-    def MIP(self, tol=10):
+    def MIP(self, tol=1):
         """maximises the ratio in integer space
-        TODO: if cvxpy doesn't like my objective, move the lin_R stuff into this
-        function"""
-        self.P_old = self.P*0
-        #p_last = self.P_old
-        #model = pyo.ConcreteModel()
-        #while p_last != self.P:
-        self.init_lin_R()
-        self.flat_P = np.delete(self.P, 1)
+        TODO: the function is cyclic, and trying to add the second derivative
+        to the linearisation didn't help. The coordinates don't really move from
+        the initial value, so the best alternative will be to enumerate all
+        possible values and find the highest ratio, at a cost of
+        3^(len(flat_P)-1) function calls.
+            Other options are to enumerate between the two cycled values, use
+        a different solver that accepts my quadratics, or get SCIP to work
+        non-linear. Or read a bunch of journal papers and figure something else
+        out.. Or just bypass cvxpy and go straight for a solver. or maybe re-do
+        the problem so instead of integers, the variables have a resolution of
+        .5, and use the answer as a base to start solving?"""
+        # initialize the constants
+        
+        #self.P_old = self.P*0
+        #np.delete(q.P.flatten(), 1)
+        self.flat_P = np.delete(self.P.flatten(), 1)
         flat_P = self.flat_P
-        U = cvx.Variable(len(flat_P))
-        objective = cvx.Maximize(self.lin_R(U))
-        constraints = [flat_P-tol <= U, U <= flat_P+tol]
-        prob = cvx.Problem(objective, constraints)
+        len_P = len(flat_P)
+        self.old_flat_P = flat_P*0
+        #self.dR = self.del_ratio()
+        
+        res_buffer = (np.zeros(len_P),)*4   # FIFO buffer of the results
+        
+        # create objective
+        R0 = cvx.Parameter()    # Ratio at the initial point
+        dR = cvx.Parameter(len_P)   # del Ratio
+        P0 = cvx.Parameter(len_P)   # initial point of each iteration
+        U = cvx.Variable(len_P, integer=True)   # iterative variable ie. x0+h
+        #H = cvx.Parameter((len_P, len_P))
+        
+        """linearised ratio is cyclic. each iteration is clearly over-shooting
+        the optimum, and I think that's because R0 changes with each iteration.
+        It must change because it needs to be in the same place as dR, which
+        obviously is 0. The options for improvement are therefore: 1. dampen dR
+        until the point where the oscillations stop and both initial coordinates
+        agree on the end coordinates; 2. include a the next term in the taylor
+        series (tried that, cvxpy didn't like it); or 3. unpack the ratio before
+        linearising it. Option 3. is similair to Dinkelbach’s Transform, except
+        the optimal auxillary variable is already known"""
+        #objective = cvx.Maximize(R0 + (U-P0).T * dR) # + (U-P0).T*H*(U-P0))
+        
+        """unpacked ratio, that is then linearised"""
+        R_opt = self.ratio      # the floating-point ratio i.e. non-integer solution
+        A0 = cvx.Parameter()
+        L0 = cvx.Parameter()
+        dA = cvx.Parameter(len_P)
+        dL = cvx.Parameter(len_P)
+        objective = cvx.Maximize(A0 + (U-P0).T * dA - R_opt*(L0 + (U-P0).T * dL))
+        
+        # constraints
+        bl = cvx.Parameter(len_P)
+        bu = cvx.Parameter(len_P)
+        constraints = [bl <= U, U <= bu, U <= 250, U >= 0]
+        
+        while (self.flat_P != self.old_flat_P).all():
+            self.old_flat_P = self.flat_P
+            flat_P = self.flat_P
+            #print(flat_P)
+            # set values
+            self.find_ratio(flat_P)
+            
+# =============================================================================
+#             # values for directly linearised ratio
+#             R0.value = float(self.ratio)    # Ratio at the initial point
+#             J = self.del_ratio(flat_P)
+#             dR.value = J                    # del Ratio
+# =============================================================================
+            
+            # values for unpacked ratio
+            A0.value = self.area
+            L0.value = self.perimeter
+            dA.value = self.del_area()
+            dL.value = self.del_lengths()
+            
+            P0.value = self.flat_P          # initial point of each iteration
+            bl.value = flat_P-tol           # lower bounds of the problem
+            bu.value = flat_P+tol           # upper bounds of the problem
+            
+            #H.value = np.dot(np.vstack((J, np.zeros((2, 3)))).T, np.vstack((J, np.zeros((2, 3)))))
+            
+            #print(U.value, flat_P)
+            prob = cvx.Problem(objective, constraints)
+            prob.solve(solver=cvx.GLPK_MI)
+            #prob.solve(solver=cvx.ECOS_BB)
+            #print(R0.value, prob.value, U.value, flat_P)
+            print(prob.value, U.value, flat_P)
+            self.flat_P = U.value
+            self.MIP_solve = prob
+            
+            # results buffer update and oscillation check
+            res_buffer = res_buffer[1:] + (flat_P,)
+            if (res_buffer[0] == res_buffer[2]) and (res_buffer[1] == res_buffer[3]):
+                break
+        
+        def shuffle(self):
+            """shuffles the coordinates up and down by 1 until and optimum is
+            found. This is important because I'm not 100% sure that the set is
+            symmetric, but I am sure that it's a cross-shaped set because the
+            problem is a 2d shadow inside the values set, so it's pretty easy
+            to just how the potential values connect together"""
+            
         
 
 
