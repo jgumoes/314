@@ -1,5 +1,6 @@
 # this is just antiquated junk
 \314 attempt 1.py
 \314 i goofed the filenames.py
-.gitignore
+# I download some journals as pdfs. I'm not about to re-host them on github because
+# the journal publishers are legit crazy
 *.pdf
