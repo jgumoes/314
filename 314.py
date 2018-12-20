@@ -63,16 +63,25 @@ class q_314():
         self.lengths = np.array([])
         self.perimeter = None
         self.area = None
+        self.areas = np.array([])
         self.ratio = None
+        self.last_ratio = 0
         
         self.dR = None
         self.flat_P = None
         
-        self.run()
+        #self.run()
     
     def run(self):
-        """one day, this will grow into a beautiful function, but not yet"""
+        """calls optimise and next_P until an optimum is reached"""
         self.optimise()
+        while self.ratio > self.last_ratio:
+            print("length of P: {};\t ratio: {}".format(len(self.P), np.round(self.ratio, 8)))
+            self.last_ratio = self.ratio
+            self.next_P_lengths()
+            self.optimise()
+        print("length of P: {};\t ratio: {}".format(len(self.P), np.round(self.ratio, 8)))
+        print("optimum ratio is {}".format(np.round(self.last_ratio, 8)))
         #self.MIP()
         
     
@@ -102,7 +111,9 @@ class q_314():
         self.perimeter = np.sum(L)
     
     def find_area(self):
-        """Finds the total area using the trapezium rule"""
+        """Finds the total area using the trapezium rule
+        Todo: this function allows positive areas when perimeter double-backs
+        on itself"""
         P = self.P
         no_i = np.diff(P[-1])[0] > 0    # test for if there is a coordinate on x=y
         
@@ -119,6 +130,7 @@ class q_314():
         ys = P.T[1]
         
         A[1:] = (ys[1:]+ys[:-1])*(xs[1:]-xs[:-1])*4
+        self.areas = A
         self.area = np.sum(A) - 4*yi**2
 
     def make_P_init(self, n):
@@ -183,6 +195,7 @@ class q_314():
         yi = np.sum(P[-1])/2    # coordinates of the symmetry intercept
         
         P_split = np.vstack((P, np.array([yi, yi])))
+        #print(P_split)
         
         Xs, Ys = np.vstack((np.array([0, 250]), P_split)).T
         grads = (Ys[1:]-Ys[:-1])/(Xs[1:]-Xs[:-1])   # gradients of each line section
@@ -191,14 +204,14 @@ class q_314():
         
         pos_max = angles.argmin()   # position of the sharpest corner
                                     # the index should line up if using P_split
-        #print(pos_max)
+        print(pos_max)
         #print(angles)
         new_X = np.zeros(len(P_split[1:-1]) + 1)    # i'm using P_split because if a coordinate is
         new_Y = np.zeros(len(P_split[1:-1]) + 1)    # too close to y=x, it won't integerise nicely
         
         
-        if (pos_max <= (len(P_split)-3)):
-            Xs = Xs[1:-1]
+        if (pos_max <= (len(P_split)-3)):   # what the fuck is this? whoever wrote this should
+            Xs = Xs[1:-1]                   # be ashaimed for not commenting probably
             Ys = Ys[1:-1]
             new_X[:pos_max] = Xs[:pos_max]
             new_X[pos_max:pos_max+2] = np.round((Xs[pos_max:pos_max+2] + Xs[pos_max-1:pos_max+1])/2)
@@ -222,8 +235,15 @@ class q_314():
     
     def next_P_lengths(self):
         """makes a new P by finding the longest length then splitting it.
-        to be used if next_P() gets stuck in a loop
-        TODO: make"""
+        I think the new P will be further from optimum than the new P made by
+        splitting the sharpest corner, but it's more straightforward"""
+        P = self.P
+        i = np.argmax(self.lengths)
+        if i == 0:
+            new_C = P[0]/2
+        else:
+            new_C = (P[i-1]+P[i])/2
+        self.P = np.vstack((P[:i], new_C, P[i:]))
     
     def del_lengths(self):
         """finds the gradient of the lengths"""
@@ -251,7 +271,9 @@ class q_314():
             return np.append(del_out, (ddP[-1])/lengths[-1])*8
     
     def del_area(self):
-        """Finds the gradient of the area"""
+        """Finds the gradient of the area
+        Todo: allows for positive dx, negative dy, and dx>dy, for coordinates
+        on the wrong side of y=x. Might be a flaw in the math?"""
         P = self.P
         no_i = np.diff(P[-1])[0] > 0    # test for if there is a coordinate on x=y
         
@@ -422,10 +444,15 @@ class q_314():
         
         def shuffle(self):
             """shuffles the coordinates up and down by 1 until and optimum is
-            found. This is important because I'm not 100% sure that the set is
-            symmetric, but I am sure that it's a cross-shaped set because the
+            found. This might be needed because I'm not 100% sure that the set
+            is symmetric, but I am sure that it's a cross-shaped set because the
             problem is a 2d shadow inside the values set, so it's pretty easy
-            to just how the potential values connect together"""
+            to just how the potential values connect together. If I'm wrong,
+            I'll make this function, but only if I'm wrong.
+            the method I'd use is to convert an integer to a binary string, add
+            zeros to the front, and convert the string to a numpy array,
+            ie. something like np.array(list(bin(i)[2:]), dtype=int) where i is
+            the iterative"""
             
         
 
@@ -436,8 +463,10 @@ def test_dels(n=None, eps=10**-7):
     proj = q_314()
     if n is None:
         proj.P = np.array([[ 50., 250.], [100., 230.], [150., 215.], [200., 200.]])
-    else:
+    elif type(n)==int:
         proj.make_P_init(n)
+    elif type(n) == np.ndarray:
+        proj.P = n
     
     len_P = len(proj.P)*2 -1
     P_flat = np.zeros(len_P)
@@ -450,9 +479,9 @@ def test_dels(n=None, eps=10**-7):
     d_ratios = np.zeros(len_P)
     
     proj.find_lengths()
-    del_l = proj.del_lengths()
-    del_a = proj.del_area()
-    del_r = proj.del_ratio()
+    del_l = np.round(proj.del_lengths(), 8)
+    del_a = np.round(proj.del_area(), 8)
+    del_r = np.round(proj.del_ratio(), 8)
     
     #print("lengths: {}".format(proj.lengths))
     
@@ -479,16 +508,21 @@ def test_dels(n=None, eps=10**-7):
         
         P_flat[i] += eps
     
+    d_l_brute = np.round(d_lengths/(2*eps), 8)
+    d_a_brute = np.round(d_areas/(2*eps), 8)
+    d_r_brute = np.round(d_ratios/(2*eps), 8)
+    
     print("Lengths:")
-    print("brute force: {} \n arithmatic: {}".format(d_lengths/(2*eps), del_l))
+    print("brute force: \t arithmatic: ")
+    print(np.vstack((d_l_brute, del_l, np.abs(d_l_brute - del_l))).T)
     print("\n")
     print("Areas:")
-    print("brute force: {} \n arithmatic: {}".format(d_areas/(2*eps), del_a))
+    print("brute force: \t arithmatic: ")
+    print(np.vstack((d_a_brute, del_a, np.abs(d_a_brute - del_a))).T)
     print("\n")
     print("Ratios:")
-    print("brute force: {} \n arithmatic: {}".format(d_ratios/(2*eps), del_r))
-    print("\n")
-
+    print("brute force: \t arithmatic: ")
+    print(np.vstack((d_r_brute, del_r, np.abs(d_r_brute - del_r))).T)
 
 def plot(P):
     """Plots the quater graph made by P.
