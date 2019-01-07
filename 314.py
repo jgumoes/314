@@ -42,8 +42,8 @@ linear program.
 import numpy as np
 import scipy.optimize as op
 import bokeh.plotting as plt
-import pyomo.environ as pyo
-import cvxpy as cvx
+#import pyomo.environ as pyo
+#import cvxpy as cvx
 
 
 class q_314():
@@ -72,10 +72,10 @@ class q_314():
         
         #self.run()
     
-    def run(self):
+    def run(self, buff_len = 3):
         """calls optimise and next_P until an optimum is reached"""
         self.optimise()
-        while self.ratio > self.last_ratio:
+        while self.ratio >= self.last_ratio:
             print("length of P: {};\t ratio: {}".format(len(self.P), np.round(self.ratio, 8)))
             self.last_ratio = self.ratio
             self.next_P_lengths()
@@ -83,6 +83,19 @@ class q_314():
         print("length of P: {};\t ratio: {}".format(len(self.P), np.round(self.ratio, 8)))
         print("optimum ratio is {}".format(np.round(self.last_ratio, 8)))
         #self.MIP()
+    
+    def run2(self, end=200):
+        self.optimise()
+        max_ratio = self.ratio
+        max_len = self.P
+        while len(self.P) <= 200:
+            self.last_ratio = self.ratio
+            self.next_P_lengths()
+            self.optimise()
+            if self.ratio > max_ratio:
+                max_ratio = self.ratio
+                max_len = len(self.P)
+        print("optimum ratio is {}, with a P length of {}".format(np.round(max_ratio, 8), max_len))
         
     
     def find_lengths(self):
@@ -112,32 +125,48 @@ class q_314():
     
     def find_area(self):
         """Finds the total area using the trapezium rule
-        Todo: this function allows positive areas when perimeter double-backs
-        on itself"""
-        P = self.P
-        no_i = np.diff(P[-1])[0] > 0    # test for if there is a coordinate on x=y
+        Todo: this function doesn't work properly for yN=xN"""
+# =============================================================================
+#         P = self.P
+#         no_i = np.diff(P[-1])[0] != 0    # test for if there is a coordinate on x=y
+#         
+#         A = np.zeros(len(P) + no_i) # areas of each triangle segment
+#         
+#         if no_i:
+#             yi = np.sum(P[-1])/2    # coordinates of the symmetry intercept
+#             P = np.vstack((P, np.array([yi, yi])))
+#         else:
+#             yi = P[-1][1]
+#         A[0] = P[0][0]*250*8
+#         
+#         xs = P.T[0]
+#         ys = P.T[1]
+#         
+#         A[1:] = (ys[1:]+ys[:-1])*(xs[1:]-xs[:-1])*4
+#         #self.area = np.sum(A) - 4*yi**2    # this allows for coordinates over
+#                                             # x=y to add to the area instead of
+#                                             # subtract from the area. 
+#         
+#         triangle_A = 4*(np.append(xs[0]**2, np.abs(xs[1:]**2 - xs[:-1]**2)))
+#         #print(triangle_A)
+#         
+#         self.areas = A - triangle_A
+#         self.area = np.sum(self.areas)
+# =============================================================================
         
-        A = np.zeros(len(P) + no_i) # areas of each triangle segment
+        P0 = np.array([0, 250])
+        P_e = np.vstack((P0, P, P.T[::-1].T[::-1], P0[::-1]))
+        xe = P_e[:, 0]
+        ye = P_e[:, 1]
+        self.area = 2*np.sum(np.diff(xe)*(ye[1:]+ye[:-1]))
         
-        if no_i:
-            yi = np.sum(P[-1])/2    # coordinates of the symmetry intercept
-            P = np.vstack((P, np.array([yi, yi])))
-        else:
-            yi = P[-1][1]
-        A[0] = P[0][0]*250*8
         
-        xs = P.T[0]
-        ys = P.T[1]
-        
-        A[1:] = (ys[1:]+ys[:-1])*(xs[1:]-xs[:-1])*4
-        self.areas = A
-        self.area = np.sum(A) - 4*yi**2
 
     def make_P_init(self, n):
         """makes an initial set of P with n values"""
         x = np.linspace(0, 250, n+2)[1:-1]
         y = x*0 + 250
-        self.P = np.vstack((x, y)).T
+        self.P = np.round(np.vstack((x, y)).T, 0)
         return self.P
 
     def find_ratio(self, P_in=None):
@@ -204,7 +233,7 @@ class q_314():
         
         pos_max = angles.argmin()   # position of the sharpest corner
                                     # the index should line up if using P_split
-        print(pos_max)
+        #print(pos_max)
         #print(angles)
         new_X = np.zeros(len(P_split[1:-1]) + 1)    # i'm using P_split because if a coordinate is
         new_Y = np.zeros(len(P_split[1:-1]) + 1)    # too close to y=x, it won't integerise nicely
@@ -236,7 +265,7 @@ class q_314():
     def next_P_lengths(self):
         """makes a new P by finding the longest length then splitting it.
         I think the new P will be further from optimum than the new P made by
-        splitting the sharpest corner, but it's more straightforward"""
+        splitting the sharpest corner, but it's more straightforward to debug"""
         P = self.P
         i = np.argmax(self.lengths)
         if i == 0:
@@ -302,6 +331,23 @@ class q_314():
             del_out[1:] = flat_dels[2:]
             del_out[-2:] = dels_end #del_out[-2:] - np.sum(P[-1])
             return del_out
+    
+# =============================================================================
+#     def del_area(self):
+#         """Finds the gradient of the area. New attempt that works for out-of-bound
+#         coordinates"""
+#         fP = self.P
+#         if (np.diff(P[-1])[0] == 0):
+#             bP = np.vstack((np.array([0, 250]), self.P))    # bP = bigger P
+#         else:
+#             i = np.sum(self.P[-1])/2
+#             bP = np.vstack((np.array([0, 250]), self.P, np.array([i, i])))
+#         
+#         x = bP[:, 0]; y = bP[:, 1]
+#         
+#         x_i = (-1)**(x[1:] >= x[:-1])   # the direction of change of the triangle segment
+#         d_t_A = 
+# =============================================================================
         
     def del_ratio(self, P_in=None):
         """finds the jacobian of the ratio. can be used for scipy optimisation
