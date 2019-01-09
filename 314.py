@@ -45,7 +45,6 @@ import bokeh.plotting as plt
 #import pyomo.environ as pyo
 #import cvxpy as cvx
 
-
 class q_314():
     """The previous script put into a class. This removes the need for P being
     reshaped constantly, and makes all variables accessible without making
@@ -75,27 +74,32 @@ class q_314():
     def run(self, buff_len = 3):
         """calls optimise and next_P until an optimum is reached"""
         self.optimise()
+        self.shuffle()
         while self.ratio >= self.last_ratio:
             print("length of P: {};\t ratio: {}".format(len(self.P), np.round(self.ratio, 8)))
             self.last_ratio = self.ratio
             self.next_P_lengths()
             self.optimise()
+            self.shuffle()
         print("length of P: {};\t ratio: {}".format(len(self.P), np.round(self.ratio, 8)))
         print("optimum ratio is {}".format(np.round(self.last_ratio, 8)))
         #self.MIP()
     
     def run2(self, end=200):
         self.optimise()
+        res = [self.ratio]
         max_ratio = self.ratio
         max_len = self.P
-        while len(self.P) <= 200:
+        while len(self.P) <= end:
             self.last_ratio = self.ratio
             self.next_P_lengths()
             self.optimise()
+            res.append(self.ratio)
             if self.ratio > max_ratio:
                 max_ratio = self.ratio
                 max_len = len(self.P)
         print("optimum ratio is {}, with a P length of {}".format(np.round(max_ratio, 8), max_len))
+        return res
         
     
     def find_lengths(self):
@@ -126,33 +130,7 @@ class q_314():
     def find_area(self):
         """Finds the total area using the trapezium rule
         Todo: this function doesn't work properly for yN=xN"""
-# =============================================================================
-#         P = self.P
-#         no_i = np.diff(P[-1])[0] != 0    # test for if there is a coordinate on x=y
-#         
-#         A = np.zeros(len(P) + no_i) # areas of each triangle segment
-#         
-#         if no_i:
-#             yi = np.sum(P[-1])/2    # coordinates of the symmetry intercept
-#             P = np.vstack((P, np.array([yi, yi])))
-#         else:
-#             yi = P[-1][1]
-#         A[0] = P[0][0]*250*8
-#         
-#         xs = P.T[0]
-#         ys = P.T[1]
-#         
-#         A[1:] = (ys[1:]+ys[:-1])*(xs[1:]-xs[:-1])*4
-#         #self.area = np.sum(A) - 4*yi**2    # this allows for coordinates over
-#                                             # x=y to add to the area instead of
-#                                             # subtract from the area. 
-#         
-#         triangle_A = 4*(np.append(xs[0]**2, np.abs(xs[1:]**2 - xs[:-1]**2)))
-#         #print(triangle_A)
-#         
-#         self.areas = A - triangle_A
-#         self.area = np.sum(self.areas)
-# =============================================================================
+        P = self.P
         
         P0 = np.array([0, 250])
         P_e = np.vstack((P0, P, P.T[::-1].T[::-1], P0[::-1]))
@@ -303,17 +281,20 @@ class q_314():
         """Finds the gradient of the area
         Todo: allows for positive dx, negative dy, and dx>dy, for coordinates
         on the wrong side of y=x. Might be a flaw in the math?"""
-        P = self.P
-        no_i = np.diff(P[-1])[0] > 0    # test for if there is a coordinate on x=y
+        P = np.vstack((np.array([0, 250]), self.P))
+        no_i = np.diff(P[-1])[0]**2 > 0    # test for if there is a coordinate on x=y
         
         Pi = np.sum(P[-1])/2
-        fP = np.vstack((np.array([0, 250]), P, np.array([1, 1])*Pi))
+        fP = np.vstack((P, np.array([1, 1])*Pi))
         
-        if no_i:
-            dels_end = 4*np.array([fP[-3, 1]-fP[-2, 0], fP[-2, 1]-fP[-3, 0]])
-        else:
-            #fP = np.vstack((np.array([0, 250]), P))
-            dels_end = 4*np.array([P[-2, 1], -P[-2, 0]])
+# =============================================================================
+#         if no_i:
+#             dels_end = 4*np.array([P[-2, 1]-P[-1, 0], P[-1, 1]-fP[-2, 0]])
+#         else:
+#             #fP = np.vstack((np.array([0, 250]), P))
+#             dels_end = 4*np.array([P[-2, 1], -P[-2, 0]])
+# =============================================================================
+        dels_end = 4*np.array([P[-2, 1]-P[-1, 0], P[-1, 1]-P[-2, 0]])
         
         ddP = fP[2:] - fP[:-2]
         #print("ddP: {}".format(ddP*4))
@@ -331,23 +312,6 @@ class q_314():
             del_out[1:] = flat_dels[2:]
             del_out[-2:] = dels_end #del_out[-2:] - np.sum(P[-1])
             return del_out
-    
-# =============================================================================
-#     def del_area(self):
-#         """Finds the gradient of the area. New attempt that works for out-of-bound
-#         coordinates"""
-#         fP = self.P
-#         if (np.diff(P[-1])[0] == 0):
-#             bP = np.vstack((np.array([0, 250]), self.P))    # bP = bigger P
-#         else:
-#             i = np.sum(self.P[-1])/2
-#             bP = np.vstack((np.array([0, 250]), self.P, np.array([i, i])))
-#         
-#         x = bP[:, 0]; y = bP[:, 1]
-#         
-#         x_i = (-1)**(x[1:] >= x[:-1])   # the direction of change of the triangle segment
-#         d_t_A = 
-# =============================================================================
         
     def del_ratio(self, P_in=None):
         """finds the jacobian of the ratio. can be used for scipy optimisation
@@ -488,17 +452,39 @@ class q_314():
             if (res_buffer[0] == res_buffer[2]) and (res_buffer[1] == res_buffer[3]):
                 break
         
-        def shuffle(self):
-            """shuffles the coordinates up and down by 1 until and optimum is
-            found. This might be needed because I'm not 100% sure that the set
-            is symmetric, but I am sure that it's a cross-shaped set because the
-            problem is a 2d shadow inside the values set, so it's pretty easy
-            to just how the potential values connect together. If I'm wrong,
-            I'll make this function, but only if I'm wrong.
-            the method I'd use is to convert an integer to a binary string, add
-            zeros to the front, and convert the string to a numpy array,
-            ie. something like np.array(list(bin(i)[2:]), dtype=int) where i is
-            the iterative"""
+    def shuffle(self):
+        """shuffles the coordinates up and down by 1 until and optimum is
+        found. This might be needed because I'm not 100% sure that the set
+        is symmetric, but I am sure that it's a cross-shaped set because the
+        problem is a 2d shadow inside the values set, so it's pretty easy
+        to just how the potential values connect together. If I'm wrong,
+        I'll make this function, but only if I'm wrong.
+        edit: it appears that I was wrong. simple rounding caused the ratio
+        to decrease when it should have been increasing. this function fixes that,
+        but now the script is very slow"""
+        iP = self.result['x'].astype(int)   # rounds P down to nearest integer
+        #fP = np.hstack((iP[0, 0], iP[1:].flatten()))
+        ratios = np.zeros(1 + 2**len(iP))   # results storage
+        
+        def s_P(i):
+            """local worker function. turns i into a binary number, seperates
+            each digit, packages the number into a numpy array with same shape
+            as flattened P, and adds the number to P"""
+            bin_array = np.array(list(bin(i)[2:]), dtype=int)
+            Zs = np.zeros(len(iP) - len(bin_array))
+            sel_array = np.hstack((Zs, bin_array))
+            s_f_P = iP + sel_array
+            return s_f_P
+            
+            
+        for i in range(0, 2**len(iP)):
+            self.find_ratio(s_P(i))
+            ratios[i] = self.ratio
+        
+        self.find_ratio(s_P(np.argmax(ratios)))
+            
+            
+                
             
         
 
@@ -602,4 +588,7 @@ def opt_i():
     
     solve = sy.solve(sy.diff(Ri, i), i)
     solve_dx = sy.solve(sy.diff(Ri_dx, i), i)
-    
+
+que = q_314(9)
+que.optimise()
+que.shuffle()
