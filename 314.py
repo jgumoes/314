@@ -42,6 +42,7 @@ linear program.
 import numpy as np
 import scipy.optimize as op
 import bokeh.plotting as plt
+import matplotlib.pyplot as pyplot
 #import pyomo.environ as pyo
 #import cvxpy as cvx
 
@@ -101,13 +102,22 @@ class q_314():
         print("optimum ratio is {}, with a P length of {}".format(np.round(max_ratio, 8), max_len))
         return res
         
+    def flat_to_fat(self, fP):
+        """converts the flattened P to its proper form. removes all np.insert
+        this takes 1/3 of the time compared to np.insert"""
+        len_P = len(fP) + 1
+        fat_P = np.zeros((int(len_P/2), 2))
+        fat_P[0] = np.array([fP[0], 250])
+        fat_P[1:] = fP[1:].reshape(((int(len_P/2)-1), 2))
+        return fat_P
     
     def find_lengths(self):
         """outputs the perimeter, given coordinates P
         P0 is (x0, 250), and Pe is the last coordinate before the line of symmetry
         TODO: if doesn't work, re-write so that yi is added to P like in find_area()"""
         P = self.P
-        no_i = np.diff(P[-1])[0] > 0    # test for if there is a coordinate on x=y
+        #no_i = np.diff(P[-1])[0] > 0    # test for if there is a coordinate on x=y
+        no_i = (P[-1, 1]-P[-1, 0]) > 0
         
         if no_i:
             L = np.zeros(len(P)+1) # L = lengths of each line
@@ -116,7 +126,7 @@ class q_314():
         else:
             L = np.zeros(len(P))
         
-        L[0] = P[0][0]*8
+        L[0] = np.abs(P[0][0]*8)
         if len(P) != 1:
             dP = (P[1:] - P[:-1]).transpose()
             if no_i:
@@ -136,24 +146,24 @@ class q_314():
         P_e = np.vstack((P0, P, P.T[::-1].T[::-1], P0[::-1]))
         xe = P_e[:, 0]
         ye = P_e[:, 1]
-        self.area = 2*np.sum(np.diff(xe)*(ye[1:]+ye[:-1]))
+        #self.area = 2*np.sum(np.diff(xe)*(ye[1:]+ye[:-1]))
+        self.area = 2*np.sum((xe[1:]-xe[:-1])*(ye[1:]+ye[:-1]))
         
         
 
     def make_P_init(self, n):
         """makes an initial set of P with n values"""
         x = np.linspace(0, 250, n+2)[1:-1]
-        y = x*0 + 250
+        y = x*0 + 250 - np.linspace(0, len(x)-1, len(x))
         self.P = np.round(np.vstack((x, y)).T, 0)
         return self.P
 
     def find_ratio(self, P_in=None):
         """Returns the ratio of area to perimeter"""
-        #if len(P.shape)==1:
-        #    P = (np.insert(P, 1, 250)).reshape(int((len(P)+1)/2),2)
         if P_in is not None:
-            P = (np.insert(P_in, 1, 250)).reshape(int((len(P_in)+1)/2),2)
-            self.P = P
+            #P = (np.insert(P_in, 1, 250)).reshape(int((len(P_in)+1)/2),2)
+            #self.P = P
+            self.P = self.flat_to_fat(P_in)
         self.find_area()
         self.find_lengths()
         self.ratio = self.area/self.perimeter
@@ -165,23 +175,77 @@ class q_314():
         x<=y isn't an explicit bound, the set of coordinates is an N dimensional
         square with side of {0, 250}, and N = 2*number of coordinates - 1.
         I don't know much about symmetry about hyperplanes, but I do know that
-        N dimensional squares are always symmetric"""
+        N dimensional squares are always symmetric
+        edit: even though the bound set is symmetric, the answer set apparently
+        isn't. I don't understand why, but it isn't enough to simply round"""
         #if type(P) is int:
         #    P = make_P_init(P)
         P = self.P
         flat_P = P.flatten()
+        #len_P = len(flat_P) -1
         x0 = np.zeros(len(flat_P)-1)
         x0[0] = flat_P[0]
         x0[1:] = flat_P[2:]
-        b = [(0, 250)]*len(x0)
+        
+        len_x = len(x0)
+        b = [(0, 250)]
+        b += [(0, 250), (0, 249)] * int(((len_x - 1)/2))
+        #b = [(0, 250)]*len(x0)
+        
+# =============================================================================
+#         #SQSLP takes the opinion that hard constraints are more of a gentle
+#         #suggestion so all if this stuff with constraints has not worked.
+#         #i'm leaving it here for now incase I need it later, but the next thing
+#         #do is to run the optimiser recursively, decreasing the bounds when
+#         #stuff starts sticking to a straight line
+#         
+#         # set constraints. stops y from increasing, so bounds shouldn't be needed
+#         cons = [{'type': 'ineq', 'fun': lambda p: (p[0]-1)}]
+#         if len_P > 1:
+#             cons += [{'type': 'ineq', 'fun': lambda p: (p[1] - p[0] -1)},
+#                       {'type': 'ineq', 'fun': lambda p: (250 - p[2])}]
+#         
+#         # set constraints to xn > xn-1, yn <= yn-1
+#         if len_P > 3:
+#             n = 3 # P_3 = x_2
+#             while n < len_P-2: # this keeps going out of range somehow. the -2 stops constraints
+#                 #print(n)       # from being applied to the last coordinate, but that shouldn't matter
+#                 cons += [{'type': 'ineq', 'fun': lambda p: (p[n] - p[n - 2] -1)}, # xn>xn-1
+#                       {'type': 'ineq', 'fun': lambda p: (p[n-1] - p[n+1])}]       # yn<=yn-1
+#                 if n >= 5:
+#                     cons+= [{'type': 'ineq', 'fun': lambda p: (p[n-3] - p[n+1] -1)}] # yn < yn-2
+#                 n+=2
+#             cons+= [{'type': 'ineq', 'fun': lambda p: 249 - p[4]}]
+#         #print(len(cons))
+# =============================================================================
+        
+        
         self.result = op.minimize(self.func, x0, bounds=b, jac=True,
                                   options={"maxfun": 10**5})
         xres = np.round(self.result["x"])
-        if type(xres) is int or type(xres) is float:
-            len_xres = 1
-        else:
-            len_xres = len(xres)
-        self.P = (np.insert(xres, 1, 250)).reshape(int((len_xres+1)/2),2)
+        
+        if len_x >= 7: # don't actually know, but it needed a number
+            while 1:
+                ys = xres[1:].reshape((int((len_x-1)/2), 2))[:, 1]
+                reps = ys[2:]<ys[:-2]
+                if bool(reps.all()) is True:
+                    break
+                
+                for n, i in enumerate(reps):
+                    if bool(i) is False:
+                        pos = (i+2)*2 +1
+                        b[pos:] = [(0, 250), (0, xres[pos-1]-1)] * int((len_x-pos)/2)
+                        print(b)
+                    #print(b)
+                self.result = op.minimize(self.func, x0, bounds=b, jac=True,
+                                  options={"maxfun": 10**5})
+                xres = np.round(self.result["x"])
+                    
+        #if type(xres) is int or type(xres) is float:
+        #    len_xres = 1
+        #else:
+        #    len_xres = len(xres)
+        self.P = (np.insert(xres, 1, 250)).reshape(int((len_x+1)/2),2)
         
 
     def func(self, x):
@@ -190,7 +254,8 @@ class q_314():
         a hissy fit (if the jacobian is passed straight to .optimise(), it
         doesn't get recognised as a callable function by l-bfgs-b and it will
         assume the gradient is tacked on to this function"""
-        self.P = (np.insert(x, 1, 250)).reshape(int((len(x)+1)/2),2)
+        #self.P = (np.insert(x, 1, 250)).reshape(int((len(x)+1)/2),2)
+        self.P = self.flat_to_fat(x)
         self.find_ratio()
         return -self.ratio, -self.del_ratio()
     
@@ -212,7 +277,7 @@ class q_314():
         pos_max = angles.argmin()   # position of the sharpest corner
                                     # the index should line up if using P_split
         #print(pos_max)
-        #print(angles)
+        #print(angles)*
         new_X = np.zeros(len(P_split[1:-1]) + 1)    # i'm using P_split because if a coordinate is
         new_Y = np.zeros(len(P_split[1:-1]) + 1)    # too close to y=x, it won't integerise nicely
         
@@ -245,7 +310,7 @@ class q_314():
         I think the new P will be further from optimum than the new P made by
         splitting the sharpest corner, but it's more straightforward to debug"""
         P = self.P
-        i = np.argmax(self.lengths)
+        i = np.argmax(self.lengths[1:]) # ignore the first length because that just adds stuff to y=250
         if i == 0:
             new_C = P[0]/2
         else:
@@ -257,7 +322,8 @@ class q_314():
         lengths = self.lengths/8
         
         P = self.P
-        no_i = np.diff(P[-1])[0] > 0    # test for if there is a coordinate on x=y
+        #no_i = np.diff(P[-1])[0] > 0    # test for if there is a coordinate on x=y
+        no_i = (P[-1, 1]-P[-1, 0]) > 0
         
         if no_i:
             Pi = np.sum(P[-1])/2
@@ -282,7 +348,7 @@ class q_314():
         Todo: allows for positive dx, negative dy, and dx>dy, for coordinates
         on the wrong side of y=x. Might be a flaw in the math?"""
         P = np.vstack((np.array([0, 250]), self.P))
-        no_i = np.diff(P[-1])[0]**2 > 0    # test for if there is a coordinate on x=y
+        #no_i = np.diff(P[-1])[0]**2 > 0    # test for if there is a coordinate on x=y
         
         Pi = np.sum(P[-1])/2
         fP = np.vstack((P, np.array([1, 1])*Pi))
@@ -317,8 +383,9 @@ class q_314():
         """finds the jacobian of the ratio. can be used for scipy optimisation
         or for linearisation"""
         if P_in is not None:
-            P = (np.insert(P_in, 1, 250)).reshape(int((len(P_in)+1)/2),2)
-            self.P = P
+            #P = (np.insert(P_in, 1, 250)).reshape(int((len(P_in)+1)/2),2)
+            #self.P = P
+            self.P = self.flat_to_fat(P_in)
         
         self.find_lengths()
         self.find_area()
@@ -462,26 +529,65 @@ class q_314():
         edit: it appears that I was wrong. simple rounding caused the ratio
         to decrease when it should have been increasing. this function fixes that,
         but now the script is very slow"""
+        r_P = self.P
+        self.find_ratio()
+        r_ratio = self.ratio
         iP = self.result['x'].astype(int)   # rounds P down to nearest integer
+        len_iP = len(iP)
         #fP = np.hstack((iP[0, 0], iP[1:].flatten()))
-        ratios = np.zeros(1 + 2**len(iP))   # results storage
+        ratios = np.zeros(1 + 2**len_iP)   # results storage
+        
+# =============================================================================
+#         # recursive-bounds in optimise() make this bit redundant
+#         # find the last coordinate on y=250
+#         y_250 = r_P[:, 1] == 250
+#         l_250 = np.argmax(y_250)
+#         if l_250 >= 1:
+#             mask_z = "0" + "00"*(l_250-1)  
+#             mask_l = mask_z + "1"*(len_iP - len(mask_z))
+#         else:
+#             mask_l = "1"*len_iP
+#         mask_l = int(mask_l, 2)
+#         print(mask_l)
+# =============================================================================
+        
+        # find where the value is already an integer
+        
+        # find where y=250
+        
+        # combine the masks
+        #mask = bin(mask_l)[2:]
+        
+        # find the indices to skip
+        z_is = []
+        
+        #for i, mask in enumerate(mask):
+        #    if int(mask) == 0:
+        #        z_is.append(i)
         
         def s_P(i):
             """local worker function. turns i into a binary number, seperates
             each digit, packages the number into a numpy array with same shape
             as flattened P, and adds the number to P"""
             bin_array = np.array(list(bin(i)[2:]), dtype=int)
-            Zs = np.zeros(len(iP) - len(bin_array))
+            Zs = np.zeros(len_iP - len(bin_array))
             sel_array = np.hstack((Zs, bin_array))
             s_f_P = iP + sel_array
             return s_f_P
             
             
-        for i in range(0, 2**len(iP)):
+        for i in range(0, 2**len_iP):
             self.find_ratio(s_P(i))
-            ratios[i] = self.ratio
+            if np.any(self.P>250):
+                ratios[i] = 0
+            else:
+                ratios[i] = self.ratio
         
         self.find_ratio(s_P(np.argmax(ratios)))
+        if np.all(r_ratio == self.ratio):
+            print("ratios are equal")
+        elif np.all(r_P == self.P):
+            print("coordinates are identical, ratios = {}, {}".format(r_ratio, self.ratio))
             
             
                 
@@ -591,4 +697,4 @@ def opt_i():
 
 que = q_314(9)
 que.optimise()
-que.shuffle()
+#que.shuffle()
