@@ -52,23 +52,17 @@ class q_314():
     everything a global variable"""
     def __init__(self, P_init=np.array([[250-75, 250]])):
         self.result = None
-        self.old_result = None      # is this being used?
         
         if type(P_init) is not np.ndarray:
             self.P = self.make_P_init(P_init)
         else:
             self.P = P_init
-        self.P_old = self.P*0
         
         self.lengths = np.array([])
         self.perimeter = None
         self.area = None
-        self.areas = np.array([])
         self.ratio = None
-        self.last_ratio = 0
         
-        self.dR = None
-        self.flat_P = None
         
         #self.run()
     
@@ -76,14 +70,15 @@ class q_314():
         """calls optimise and next_P until an optimum is reached"""
         self.optimise()
         self.shuffle()
-        while self.ratio >= self.last_ratio:
+        last_ratio = self.ratio
+        while self.ratio >= last_ratio:
             print("length of P: {};\t ratio: {}".format(len(self.P), np.round(self.ratio, 8)))
-            self.last_ratio = self.ratio
+            last_ratio = self.ratio
             self.next_P_lengths()
             self.optimise()
             self.shuffle()
         print("length of P: {};\t ratio: {}".format(len(self.P), np.round(self.ratio, 8)))
-        print("optimum ratio is {}".format(np.round(self.last_ratio, 8)))
+        print("optimum ratio is {}".format(np.round(last_ratio, 8)))
     
     def run2(self, end=200):
         self.optimise()
@@ -91,7 +86,6 @@ class q_314():
         max_ratio = self.ratio
         max_len = self.P
         while len(self.P) <= end:
-            self.last_ratio = self.ratio
             self.next_P_lengths()
             self.optimise()
             res.append(self.ratio)
@@ -100,7 +94,14 @@ class q_314():
                 max_len = len(self.P)
         print("optimum ratio is {}, with a P length of {}".format(np.round(max_ratio, 8), max_len))
         return res
-        
+    
+    def make_P_init(self, n):
+        """makes an initial set of P with n values"""
+        x = np.linspace(0, 250, n+2)[1:-1]
+        y = x*0 + 250 - np.linspace(0, len(x)-1, len(x))
+        self.P = np.round(np.vstack((x, y)).T, 0)
+        return self.P
+    
     def flat_to_fat(self, fP):
         """converts the flattened P to its proper form. removes all np.insert
         this takes 1/3 of the time compared to np.insert"""
@@ -110,59 +111,94 @@ class q_314():
         fat_P[1:] = fP[1:].reshape(((int(len_P/2)-1), 2))
         return fat_P
     
-    def find_lengths(self):
-        """outputs the perimeter, given coordinates P
-        P0 is (x0, 250), and Pe is the last coordinate before the line of symmetry
-        TODO: if doesn't work, re-write so that yi is added to P like in find_area()"""
-        P = self.P
-        #no_i = np.diff(P[-1])[0] > 0    # test for if there is a coordinate on x=y
-        no_i = (P[-1, 1]-P[-1, 0]) > 0
-        
-        if no_i:
-            L = np.zeros(len(P)+1) # L = lengths of each line
-            xe, ye = P[-1]
-            L[-1] = np.sqrt((ye**2 + xe**2 - 2*ye*xe)*32)
-        else:
-            L = np.zeros(len(P))
-        
-        L[0] = np.abs(P[0][0]*8)
-        if len(P) != 1:
-            dP = (P[1:] - P[:-1]).transpose()
-            if no_i:
-                L[1:-1] = np.sqrt(64*(dP[0]**2 + dP[1]**2))
-            else:
-                L[1:] = np.sqrt(64*(dP[0]**2 + dP[1]**2))
-        
-        self.lengths = L
-        self.perimeter = np.sum(L)
-    
-    def find_area(self):
-        """Finds the total area using the trapezium rule
-        Todo: this function doesn't work properly for yN=xN"""
-        P = self.P
-        
-        P0 = np.array([0, 250])
-        P_e = np.vstack((P0, P, P.T[::-1].T[::-1], P0[::-1]))
-        xe = P_e[:, 0]
-        ye = P_e[:, 1]
-        self.area = 2*np.sum((xe[1:]-xe[:-1])*(ye[1:]+ye[:-1]))
-        
-        
+# =============================================================================
+#     def find_lengths(self):
+#         """outputs the perimeter, given coordinates P
+#         P0 is (x0, 250), and Pe is the last coordinate before the line of symmetry
+#         TODO: if doesn't work, re-write so that yi is added to P like in find_area()"""
+#         P = self.P
+#         #no_i = np.diff(P[-1])[0] > 0    # test for if there is a coordinate on x=y
+#         no_i = (P[-1, 1]-P[-1, 0])**2 > 0
+#         
+#         if no_i:
+#             L = np.zeros(len(P)+1) # L = lengths of each line
+#             xe, ye = P[-1]
+#             L[-1] = np.sqrt((ye**2 + xe**2 - 2*ye*xe)*32)
+#         else:
+#             L = np.zeros(len(P))
+#         
+#         L[0] = np.abs(P[0][0]*8)
+#         if len(P) != 1:
+#             dP = (P[1:] - P[:-1]).transpose()
+#             if no_i:
+#                 L[1:-1] = np.sqrt(64*(dP[0]**2 + dP[1]**2))
+#             else:
+#                 L[1:] = np.sqrt(64*(dP[0]**2 + dP[1]**2))
+#         
+#         self.lengths = L    # used in next_P_lengths and del_lengths
+#         self.perimeter = np.sum(L)  # used in find_ratios and del_ratio
+#     
+#     def find_area(self):
+#         """Finds the total area using the trapezium rule
+#         Todo: this function doesn't work properly for yN=xN"""
+#         P = self.P
+#         
+#         P0 = np.array([0, 250])
+#         P_e = np.vstack((P0, P, P.T[::-1].T[::-1], P0[::-1]))
+#         xe = P_e[:, 0]
+#         ye = P_e[:, 1]
+#         self.area = 2*np.sum((xe[1:]-xe[:-1])*(ye[1:]+ye[:-1]))
+# =============================================================================
 
-    def make_P_init(self, n):
-        """makes an initial set of P with n values"""
-        x = np.linspace(0, 250, n+2)[1:-1]
-        y = x*0 + 250 - np.linspace(0, len(x)-1, len(x))
-        self.P = np.round(np.vstack((x, y)).T, 0)
-        return self.P
 
     def find_ratio(self, P_in=None):
         """Returns the ratio of area to perimeter"""
         if P_in is not None:
-            self.P = self.flat_to_fat(P_in)
-        self.find_area()
-        self.find_lengths()
-        self.ratio = self.area/self.perimeter
+            if len(np.shape(P_in)) == 1:
+                self.P = self.flat_to_fat(P_in)
+        P = self.P
+        len_P = len(P)
+        # find_lengths
+        no_i = (P[-1, 1]-P[-1, 0])**2 > 0
+        
+        if no_i:
+            L = np.zeros(len_P+1) # L = lengths of each line
+            xe, ye = P[-1]
+            L[-1] = np.sqrt((ye**2 + xe**2 - 2*ye*xe)*32)
+        else:
+            L = np.zeros(len_P)
+        
+        L[0] = np.abs(P[0][0]*8)
+        if len_P != 1:
+            dP = (P[1:] - P[:-1]).transpose()
+            if no_i:
+                L[1:-1] = np.sqrt(64*(dP[0]**2 + dP[1]**2)) # dx**2 + dy**2
+            else:
+                L[1:] = np.sqrt(64*(dP[0]**2 + dP[1]**2))
+        
+        self.lengths = L    # used in next_P_lengths and del_lengths
+        perimeter = np.sum(L)
+        self.perimeter = perimeter  # used in find_ratios and del_ratio
+        
+        # find area
+        P0 = np.array([0, 250])
+        #extended P (mirrors P about x=y to find area under the quarter)
+        #P_e = np.vstack((P0, P, P.T[::-1].T[::-1], P0[::-1]))   # TODO: try to replace this vstack
+        
+        # this vstack replacement cut time in shuffle by 20% for n=9
+        P_e = np.zeros((len_P*2 + 2, 2))
+        P_e[0] = P0
+        P_e[-1] = P0[::-1]
+        P_e[1:len_P+1] = P
+        P_e[len_P+1:-1] = P.T[::-1].T[::-1]
+        
+        xe = P_e[:, 0]
+        ye = P_e[:, 1]
+        area = 2*np.sum((xe[1:]-xe[:-1])*(ye[1:]+ye[:-1]))
+        self.area = area
+        
+        # find ratio
+        self.ratio = area/perimeter
     
     def optimise(self):
         """optimises using scipy because fuck it.
@@ -236,7 +272,7 @@ class q_314():
         lengths = self.lengths/8 +0.001 #stops divide by zero errors
         
         P = self.P 
-        no_i = (P[-1, 1]-P[-1, 0]) > 0  # test for if there is a coordinate on x=y
+        no_i = (P[-1, 1]-P[-1, 0])**2 > 0  # test for if there is a coordinate on x=y
         
         if no_i:
             Pi = np.sum(P[-1])/2
@@ -285,8 +321,9 @@ class q_314():
         if P_in is not None:
             self.P = self.flat_to_fat(P_in)
         
-        self.find_lengths()
-        self.find_area()
+        self.find_ratio()
+        #self.find_lengths()
+        #self.find_area()
         length = self.perimeter
         area = self.area
         dA = self.del_area()
@@ -307,40 +344,142 @@ class q_314():
         I'll make this function, but only if I'm wrong.
         edit: it appears that I was wrong. simple rounding caused the ratio
         to decrease when it should have been increasing. this function fixes that,
-        but now the script is very slow"""
-        r_P = self.P
-        find_ratio = self.find_ratio
-        find_ratio()
-        r_ratio = self.ratio
+        but now the script is very slow
+        the computational time for this function is exponential. there are two
+        options that should be more efficient: when altering a point, also alter
+        the neighbouring points; branch and bound; or run through the list altering
+        points sequentially. all of these should be faster than exponential."""
+        # just a test to see if the ratio did actually improve with this function
+        # (spoilers: it did)
+        #r_P = self.P
+        #find_ratio = self.find_ratio
+        #find_ratio()
+        #r_ratio = self.ratio
+        
+        # collect the unrounded P from the optimise results
         iP = self.result['x'].astype(int)   # rounds P down to nearest integer
         len_iP = len(iP)
         
+        # this is pretty gross, but the results are currently flattened by 
+        # order=C, and the new ratio needs P flattened by order=F
+        P = self.flat_to_fat(iP)
+        len_P = len(P)
+        iP = iP*0
+        FfP = P.flatten(order="F")
+        iP[:len_P] = FfP[:len_P]
+        iP[len_P:] = FfP[len_P+1:]
+        
+        
+        #len_iP = len(iP)
+        
         ratios = np.zeros(1 + 2**len_iP)   # results storage
         
-        
+        sel_array = np.zeros(len(iP))
         def s_P(i):
             """local worker function. turns i into a binary number, seperates
             each digit, packages the number into a numpy array with same shape
             as flattened P, and adds the number to P"""
-            bin_array = np.array(list(bin(i)[2:]), dtype=int)
-            Zs = np.zeros(len_iP - len(bin_array))
-            sel_array = np.hstack((Zs, bin_array))
+            bin_i = bin(i)[2:]
+            bin_array = np.array(list(bin_i), dtype=int)
+            #Zs = np.zeros(len_iP - len(bin_array))
+            #sel_array = np.hstack((Zs, bin_array))
+            len_b = len(bin_i)
+            #len_b = len(bin_array)
+            sel_array[-len_b:] = bin_array
             s_f_P = iP + sel_array
             return s_f_P
-            
-            
-        for i in range(0, 2**len_iP):
-            find_ratio(s_P(i))
-            if np.any(self.P>250):
+        
+        
+        find_ratio_flat = self.find_ratio_flat
+        
+        ratios[0] = self.ratio
+        
+        for i in range(1, 2**len_iP):
+            #find_ratio(s_P(i))
+            #ratio = find_ratio_flat(s_P(i), len_P)
+            s_f_P = s_P(i)
+            if np.any(s_f_P>250):
                 ratios[i] = 0
             else:
-                ratios[i] = self.ratio
+                ratios[i] = find_ratio_flat(s_f_P, len_P)
         
-        find_ratio(s_P(np.argmax(ratios)))
-        if np.all(r_ratio == self.ratio):
-            print("ratios are equal")
-        elif np.all(r_P == self.P):
-            print("coordinates are identical, ratios = {}, {}".format(r_ratio, self.ratio))
+        #find_ratio(s_P(np.argmax(ratios)))
+        arg = np.argmax(ratios)
+        self.ratio = ratios[arg]
+        s_f_P = s_P(arg)
+        self.P[:, 0] = s_f_P[:len_P]
+        self.P[1:, 1] = s_f_P[len_P:]
+        #if np.all(r_ratio == self.ratio):
+        #    print("ratios are equal")
+        #elif np.all(r_P == self.P):
+        #    print("coordinates are identical, ratios = {}, {}".format(r_ratio, self.ratio))
+    
+    def find_ratio_flat(self, fP, len_P=None):
+        """Returns the ratio of area to perimeter. accepts flattened P, but
+        P must be flattened in fortran order instead of C order.
+        Note: this function doesn't use self, and doesn't add to or read from
+        the class dictionary. This is to save processing time, and because this
+        function is a step towards building a ratio finder in C"""
+        
+        if len_P is None:
+            len_P = int(len(fP)+1)/2
+        
+        #cutoff = int((len(fP)+1)/2)
+        pX = fP[:len_P]
+        pY = np.zeros(len_P)
+        pY[0] = 250
+        pY[1:] = fP[len_P:]
+        """find_lengths"""
+        no_i = (pY[-1]-pX[-1])**2 > 0
+        
+        if no_i:
+            L = np.zeros(len_P+1) # L = lengths of each line
+            #xe, ye = pX[-1]
+            L[-1] = np.sqrt((pY[-1]**2 + pX[-1]**2 - 2*pY[-1]*pX[-1])*32)
+        else:
+            L = np.zeros(len_P)
+        
+        L[0] = np.abs(pX[0]*8)
+        if len_P != 1:
+            #dP = (P[1:] - P[:-1]).transpose()
+            dPX = pX[1:] - pX[:-1]
+            dPY = pY[1:] - pY[:-1]
+            if no_i:
+                L[1:-1] = np.sqrt(64*(dPX**2 + dPY**2)) # dx**2 + dy**2
+            else:
+                L[1:] = np.sqrt(64*(dPX**2 + dPY**2))
+        
+        perimeter = np.sum(L)
+        
+        """find area"""
+        #P0 = np.array([0, 250])
+        #extended P (mirrors P about x=y to find area under the quarter)
+        #P_e = np.vstack((P0, P, P.T[::-1].T[::-1], P0[::-1]))   # TODO: try to replace this vstack
+        
+        # this vstack replacement cut time in shuffle by 20% for n=9
+        #P_e = np.zeros((len_P*2 + 2, 2))
+        #P_e[0] = P0
+        #P_e[-1] = P0[::-1]
+        #P_e[1:len_P+1] = P
+        #P_e[len_P+1:-1] = P.T[::-1].T[::-1]
+        
+        xe = np.zeros((len_P*2 + 2))
+        ye = np.zeros((len_P*2 + 2))
+        #xe[0] = 0
+        ye[0] = 250
+        xe[1:len_P+1] = pX
+        ye[1:len_P+1] = pY
+        xe[len_P+1:-1] = pY[::-1]
+        ye[len_P+1:-1] = pX[::-1]
+        xe[-1] = 250
+        #ye[-1] = 0
+        
+        #xe = P_e[:, 0]
+        #ye = P_e[:, 1]
+        area = 2*np.sum((xe[1:]-xe[:-1])*(ye[1:]+ye[:-1]))
+        
+        """find ratio"""
+        return area/perimeter
             
             
                 
@@ -369,7 +508,7 @@ def test_dels(n=None, eps=10**-7):
     d_areas = np.zeros(len_P)
     d_ratios = np.zeros(len_P)
     
-    proj.find_lengths()
+    proj.find_ratio()
     del_l = np.round(proj.del_lengths(), 8)
     del_a = np.round(proj.del_area(), 8)
     del_r = np.round(proj.del_ratio(), 8)
@@ -380,8 +519,6 @@ def test_dels(n=None, eps=10**-7):
         P_flat[i] += eps
         proj.P = (np.insert(P_flat, 1, 250)).reshape(int((len(P_flat)+1)/2),2)
         #proj.P = P_flat.reshape((4, 2))
-        proj.find_lengths()
-        proj.find_lengths()
         proj.find_ratio()
         d_lengths[i] += np.sum(proj.lengths)
         d_areas[i] += proj.area
@@ -390,8 +527,6 @@ def test_dels(n=None, eps=10**-7):
         P_flat[i] -= 2*eps
         proj.P = (np.insert(P_flat, 1, 250)).reshape(int((len(P_flat)+1)/2),2)
         #proj.P = P_flat.reshape((4, 2))
-        proj.find_lengths()
-        proj.find_lengths()
         proj.find_ratio()
         d_lengths[i] -= np.sum(proj.lengths)
         d_areas[i] -= proj.area
@@ -424,29 +559,7 @@ def plot(P):
     graph = plt.figure()
     graph.line(np.hstack((x, y[::-1])), np.hstack((y, x[::-1])))
     plt.show(graph)
-    
-def opt_i():
-    """a function to determine if a point on x=y can be more optimum than a
-    tangent across the intercept.
-    xn, yn are the last coordinates assuming there is no corner on the intercept.
-    i is a corner point on the intercept
-    vn are variables made without i, vi are variables made with i
-    v_dx are variables made replacing yn with xn+dx"""
-    import sympy as sy
-    sy.init_printing()
-    xn, yn, i, dx, S = sy.symbols("xn yn i dx S", positive=True)
-    Li = sy.sqrt((i-xn)**2 + (i-yn)**2)
-    Ai = (yn-xn)*(sy.sqrt(2) + 2*i - (xn+yn))/2*sy.sqrt(2)
-    Li_dx = sy.sqrt((i-xn)**2 + (i-xn-dx)**2)
-    Ai_dx = (dx)*(sy.sqrt(2) + 2*i - (2*xn+dx))/2*sy.sqrt(2)
-    Ri = Ai/Li
-    Ri_dx = Ai_dx/Li_dx
-    
-    Rn = (yn-xn)/2*sy.sqrt(2)
-    Rn_dx = (dx)/2*sy.sqrt(2)
-    
-    solve = sy.solve(sy.diff(Ri, i), i)
-    solve_dx = sy.solve(sy.diff(Ri_dx, i), i)
+
 
 que = q_314(9)
 que.optimise()
