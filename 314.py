@@ -41,6 +41,7 @@ linear program.
 
 import numpy as np
 import scipy.optimize as op
+import ctypes
 import bokeh.plotting as plt
 import matplotlib.pyplot as pyplot
 #import pyomo.environ as pyo
@@ -110,45 +111,6 @@ class q_314():
         fat_P[0] = np.array([fP[0], 250])
         fat_P[1:] = fP[1:].reshape(((int(len_P/2)-1), 2))
         return fat_P
-    
-# =============================================================================
-#     def find_lengths(self):
-#         """outputs the perimeter, given coordinates P
-#         P0 is (x0, 250), and Pe is the last coordinate before the line of symmetry
-#         TODO: if doesn't work, re-write so that yi is added to P like in find_area()"""
-#         P = self.P
-#         #no_i = np.diff(P[-1])[0] > 0    # test for if there is a coordinate on x=y
-#         no_i = (P[-1, 1]-P[-1, 0])**2 > 0
-#         
-#         if no_i:
-#             L = np.zeros(len(P)+1) # L = lengths of each line
-#             xe, ye = P[-1]
-#             L[-1] = np.sqrt((ye**2 + xe**2 - 2*ye*xe)*32)
-#         else:
-#             L = np.zeros(len(P))
-#         
-#         L[0] = np.abs(P[0][0]*8)
-#         if len(P) != 1:
-#             dP = (P[1:] - P[:-1]).transpose()
-#             if no_i:
-#                 L[1:-1] = np.sqrt(64*(dP[0]**2 + dP[1]**2))
-#             else:
-#                 L[1:] = np.sqrt(64*(dP[0]**2 + dP[1]**2))
-#         
-#         self.lengths = L    # used in next_P_lengths and del_lengths
-#         self.perimeter = np.sum(L)  # used in find_ratios and del_ratio
-#     
-#     def find_area(self):
-#         """Finds the total area using the trapezium rule
-#         Todo: this function doesn't work properly for yN=xN"""
-#         P = self.P
-#         
-#         P0 = np.array([0, 250])
-#         P_e = np.vstack((P0, P, P.T[::-1].T[::-1], P0[::-1]))
-#         xe = P_e[:, 0]
-#         ye = P_e[:, 1]
-#         self.area = 2*np.sum((xe[1:]-xe[:-1])*(ye[1:]+ye[:-1]))
-# =============================================================================
 
 
     def find_ratio(self, P_in=None):
@@ -158,7 +120,8 @@ class q_314():
                 self.P = self.flat_to_fat(P_in)
         P = self.P
         len_P = len(P)
-        # find_lengths
+        
+        """find_lengths"""
         no_i = (P[-1, 1]-P[-1, 0])**2 > 0
         
         if no_i:
@@ -180,13 +143,11 @@ class q_314():
         perimeter = np.sum(L)
         self.perimeter = perimeter  # used in find_ratios and del_ratio
         
-        # find area
+        """find area"""
         P0 = np.array([0, 250])
-        #extended P (mirrors P about x=y to find area under the quarter)
-        #P_e = np.vstack((P0, P, P.T[::-1].T[::-1], P0[::-1]))   # TODO: try to replace this vstack
         
         # this vstack replacement cut time in shuffle by 20% for n=9
-        P_e = np.zeros((len_P*2 + 2, 2))
+        P_e = np.zeros((len_P*2 + 2, 2))    #extended P (mirrors P about x=y to find area under the quarter)
         P_e[0] = P0
         P_e[-1] = P0[::-1]
         P_e[1:len_P+1] = P
@@ -197,7 +158,7 @@ class q_314():
         area = 2*np.sum((xe[1:]-xe[:-1])*(ye[1:]+ye[:-1]))
         self.area = area
         
-        # find ratio
+        """find ratio"""
         self.ratio = area/perimeter
     
     def optimise(self):
@@ -225,7 +186,7 @@ class q_314():
                                   options={"maxfun": 10**5})
         xres = np.round(self.result["x"])
         
-        if len_x >= 7: # don't actually know, but it needed a number
+        if len_x >= 7:
             while 1:
                 ys = xres[1:].reshape((int((len_x-1)/2), 2))[:, 1]
                 reps = ys[2:]<ys[:-2]
@@ -322,8 +283,6 @@ class q_314():
             self.P = self.flat_to_fat(P_in)
         
         self.find_ratio()
-        #self.find_lengths()
-        #self.find_area()
         length = self.perimeter
         area = self.area
         dA = self.del_area()
@@ -349,12 +308,6 @@ class q_314():
         options that should be more efficient: when altering a point, also alter
         the neighbouring points; branch and bound; or run through the list altering
         points sequentially. all of these should be faster than exponential."""
-        # just a test to see if the ratio did actually improve with this function
-        # (spoilers: it did)
-        #r_P = self.P
-        #find_ratio = self.find_ratio
-        #find_ratio()
-        #r_ratio = self.ratio
         
         # collect the unrounded P from the optimise results
         iP = self.result['x'].astype(int)   # rounds P down to nearest integer
@@ -370,8 +323,6 @@ class q_314():
         iP[len_P:] = FfP[len_P+1:]
         
         
-        #len_iP = len(iP)
-        
         ratios = np.zeros(1 + 2**len_iP)   # results storage
         
         sel_array = np.zeros(len(iP))
@@ -381,10 +332,7 @@ class q_314():
             as flattened P, and adds the number to P"""
             bin_i = bin(i)[2:]
             bin_array = np.array(list(bin_i), dtype=int)
-            #Zs = np.zeros(len_iP - len(bin_array))
-            #sel_array = np.hstack((Zs, bin_array))
             len_b = len(bin_i)
-            #len_b = len(bin_array)
             sel_array[-len_b:] = bin_array
             s_f_P = iP + sel_array
             return s_f_P
@@ -395,24 +343,18 @@ class q_314():
         ratios[0] = self.ratio
         
         for i in range(1, 2**len_iP):
-            #find_ratio(s_P(i))
-            #ratio = find_ratio_flat(s_P(i), len_P)
             s_f_P = s_P(i)
             if np.any(s_f_P>250):
                 ratios[i] = 0
             else:
                 ratios[i] = find_ratio_flat(s_f_P, len_P)
         
-        #find_ratio(s_P(np.argmax(ratios)))
         arg = np.argmax(ratios)
         self.ratio = ratios[arg]
         s_f_P = s_P(arg)
         self.P[:, 0] = s_f_P[:len_P]
         self.P[1:, 1] = s_f_P[len_P:]
-        #if np.all(r_ratio == self.ratio):
-        #    print("ratios are equal")
-        #elif np.all(r_P == self.P):
-        #    print("coordinates are identical, ratios = {}, {}".format(r_ratio, self.ratio))
+
     
     def find_ratio_flat(self, fP, len_P=None):
         """Returns the ratio of area to perimeter. accepts flattened P, but
@@ -424,45 +366,32 @@ class q_314():
         if len_P is None:
             len_P = int(len(fP)+1)/2
         
-        #cutoff = int((len(fP)+1)/2)
         pX = fP[:len_P]
         pY = np.zeros(len_P)
         pY[0] = 250
         pY[1:] = fP[len_P:]
+        
         """find_lengths"""
-        no_i = (pY[-1]-pX[-1])**2 > 0
+        no_i = (pY[-1]-pX[-1])**2 > 0   #test for if there is a point on x=y
         
         if no_i:
             L = np.zeros(len_P+1) # L = lengths of each line
-            #xe, ye = pX[-1]
             L[-1] = np.sqrt((pY[-1]**2 + pX[-1]**2 - 2*pY[-1]*pX[-1])*32)
         else:
             L = np.zeros(len_P)
         
         L[0] = np.abs(pX[0]*8)
         if len_P != 1:
-            #dP = (P[1:] - P[:-1]).transpose()
             dPX = pX[1:] - pX[:-1]
             dPY = pY[1:] - pY[:-1]
             if no_i:
-                L[1:-1] = np.sqrt(64*(dPX**2 + dPY**2)) # dx**2 + dy**2
+                L[1:-1] = np.sqrt(64*(dPX**2 + dPY**2))
             else:
                 L[1:] = np.sqrt(64*(dPX**2 + dPY**2))
         
         perimeter = np.sum(L)
         
         """find area"""
-        #P0 = np.array([0, 250])
-        #extended P (mirrors P about x=y to find area under the quarter)
-        #P_e = np.vstack((P0, P, P.T[::-1].T[::-1], P0[::-1]))   # TODO: try to replace this vstack
-        
-        # this vstack replacement cut time in shuffle by 20% for n=9
-        #P_e = np.zeros((len_P*2 + 2, 2))
-        #P_e[0] = P0
-        #P_e[-1] = P0[::-1]
-        #P_e[1:len_P+1] = P
-        #P_e[len_P+1:-1] = P.T[::-1].T[::-1]
-        
         xe = np.zeros((len_P*2 + 2))
         ye = np.zeros((len_P*2 + 2))
         #xe[0] = 0
@@ -474,8 +403,6 @@ class q_314():
         xe[-1] = 250
         #ye[-1] = 0
         
-        #xe = P_e[:, 0]
-        #ye = P_e[:, 1]
         area = 2*np.sum((xe[1:]-xe[:-1])*(ye[1:]+ye[:-1]))
         
         """find ratio"""
