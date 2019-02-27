@@ -170,7 +170,8 @@ class q_314():
         I don't know much about symmetry about hyperplanes, but I do know that
         N dimensional squares are always symmetric
         edit: even though the bound set is symmetric, the answer set apparently
-        isn't. I don't understand why, but it isn't enough to simply round"""
+        isn't. I don't understand why, but it isn't enough to simply round
+        TODO: reformat to make use of find_ratio_flat"""
         P = self.P
         flat_P = P.flatten()
         x0 = np.zeros(len(flat_P)-1)
@@ -210,7 +211,8 @@ class q_314():
         the jacobian must be the second returned variable, or scipy throws
         a hissy fit (if the jacobian is passed straight to .optimise(), it
         doesn't get recognised as a callable function by l-bfgs-b and it will
-        assume the gradient is tacked on to this function"""
+        assume the gradient is tacked on to this function
+        TODO: reformat to make use of find_ratio_flat"""
         self.P = self.flat_to_fat(x)
         self.find_ratio()
         return -self.ratio, -self.del_ratio()
@@ -278,7 +280,8 @@ class q_314():
         
     def del_ratio(self, P_in=None):
         """finds the jacobian of the ratio. can be used for scipy optimisation
-        or for linearisation"""
+        or for linearisation
+        TODO: reformat to make use of find_ratio_flat"""
         if P_in is not None:
             self.P = self.flat_to_fat(P_in)
         

@@ -13,8 +13,11 @@ import numpy as np
 
 cfunc = ctypes.CDLL("C:\\Users\\jgumo\\Documents\\Scripts\\Python Scripts\\project euler\\314\\C code\\c_functions.dll")
 arr = np.linspace(0, 20, 21, dtype="int")
+print(bin(5))
 
-print(cfunc.power(5))
-print(cfunc.butts())
-print(cfunc.sum(ctypes.c_void_p(arr.ctypes.data), len(arr)))
-print(cfunc.array())
+#print(cfunc.power(4))
+#print(cfunc.butts())
+#print(cfunc.sum(ctypes.c_void_p(arr.ctypes.data), len(arr)))
+#print(cfunc.array())
+print(cfunc.bin0(5, 11))
+cfunc.print_bin()

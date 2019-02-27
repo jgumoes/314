@@ -33,11 +33,16 @@ int sum(const void * nparray, int len_array){
 int power(int num){
 	//return 2**num
 	int out = 2;
-	int i = 0;
-	for (i=1; i<num; i++){
-		out *= 2;
+	//int i = 0;
+	if(num==0){
+		return 1;
 	}
-	return out;
+	else{
+		for (int i=1; i<num; i++){
+			out *= 2;
+		}
+		return out;
+	}
 }
 
 
@@ -52,6 +57,83 @@ int array(){
 	for (int i=0; i<5; i++){
 		printf("%d \n", arr[i]);
 	}
-	return arr[-2];
+	return arr[-2];		//this doesn't work, because arr points to the first element of the array, and the index is the first
+						//element plus the index times the space between each element i.e. for 8-bit integers the space would be
+						//8 bits
 }
 
+int bin0(int num, int arr_len){
+	//converts an integer number to binary, as an array of the same length as flat_P
+	//Actually returns the wrong thing for some reason: 
+	const int len = arr_len;
+	//int arr[len] = {0};
+	
+	int arr[arr_len];	//ignore this error, it works fine. this is how you create a variable length array in C
+	for(int i=0; i<arr_len; i++){																	//seriously
+		arr[i] = 0;
+	}
+	
+	//find number of places in binary number. in python this would be int(log2(num))+1. but this isn't python,
+	//and I'm struggling to come to terms with that
+	int n0 = 0;
+	while (power(n0)<num){
+		n0++;
+	}
+
+	//convert num into a binary number spread accross an array
+	for(int i=n0; n0>=0; i++){
+		if(num - power(n0)>=0){
+			num = num - power(n0);
+			arr[i] = 1;
+		}
+		n0--;
+	}
+
+
+	arr[arr_len-n0] = 1;
+	for(int i=0; i<arr_len; i++){
+		printf("%d", arr[i]);
+	}
+	printf("\n");
+	return num;
+}
+
+int * bin(int num, int arr_len){
+	//converts an integer number to binary, as an array of the same length as flat_P
+	//returns the array
+	
+	static int bin_arr[250];	//creates a large non-variable array, but only the first arr_len indexes will be used
+								//static variable-length arrays are possible, but the memory block has to be declared i think,
+								// so this is probably the same thing, only with less learning involved
+	for(int i=0; i<arr_len; i++){
+		int n2 = power(arr_len-i-1);
+		//printf("i = %d,\t 2**n = %d\n", i, n2);
+		if(num - n2 < 0){
+			bin_arr[i] = 0;
+		}
+		else{
+			num = num - n2;
+			bin_arr[i] = 1;
+		}
+	}
+	/*
+	for(int i=0; i<arr_len; i++){
+		printf("%d", bin_arr[i]);
+	}
+	printf("\n");
+	*/
+	return bin_arr;
+}
+
+void print_bin(){
+	//runs bin, takes the array, and prints the array
+	int *arr; //initialise the array as a pointer
+	int arr_len = 11;
+	arr = bin(5, arr_len);
+	/*for(int i=0; i<arr_len; i++){
+		printf("%d, ", arr[i]);
+	}*/
+	for(int i=0; i<arr_len; i++){
+		printf("%d", arr[i]);
+	}
+}
