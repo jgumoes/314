@@ -4,3 +4,4 @@
 # I download some journals as pdfs. I'm not about to re-host them on github because
 # the journal publishers are legit crazy
 *.pdf
+*.exe
