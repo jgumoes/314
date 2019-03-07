@@ -47,6 +47,9 @@ import matplotlib.pyplot as pyplot
 #import pyomo.environ as pyo
 #import cvxpy as cvx
 
+import ctypes
+cfuncs = ctypes.CDLL("C:\\Users\\jgumo\\Documents\\Scripts\\Python Scripts\\project euler\\314\\C code\\c_shuffle.dll")
+
 class q_314():
     """The previous script put into a class. This removes the need for P being
     reshaped constantly, and makes all variables accessible without making
@@ -297,7 +300,7 @@ class q_314():
             return np.array([del_r])
     
         
-    def shuffle(self):
+    def shuffle_OG(self):
         """shuffles the coordinates up and down by 1 until and optimum is
         found. This might be needed because I'm not 100% sure that the set
         is symmetric, but I am sure that it's a cross-shaped set because the
@@ -350,9 +353,11 @@ class q_314():
             if np.any(s_f_P>250):
                 ratios[i] = 0
             else:
-                ratios[i] = find_ratio_flat(s_f_P, len_P)
+                #ratios[i] = find_ratio_flat(s_f_P, len_P)
+                ratios[i] = cfuncs.find_ratio_flat(s_f_P, len_P)
         
         arg = np.argmax(ratios)
+        print(arg)
         self.ratio = ratios[arg]
         s_f_P = s_P(arg)
         self.P[:, 0] = s_f_P[:len_P]
@@ -410,8 +415,59 @@ class q_314():
         
         """find ratio"""
         return area/perimeter
-            
-            
+    
+    def shuffle(self):
+        """shuffle_og, but everything is done in C"""
+        
+        # collect the unrounded P from the optimise results
+        iP = self.result['x'].astype(int)   # rounds P down to nearest integer
+        len_iP = len(iP)
+        
+        # this is pretty gross, but the results are currently flattened by 
+        # order=C, and the new ratio needs P flattened by order=F
+        P = self.flat_to_fat(iP)
+        len_P = len(P)
+        iP = iP*0
+        FfP = P.flatten(order="F")
+        iP[:len_P] = FfP[:len_P]
+        iP[len_P:] = FfP[len_P+1:]
+        
+        cfuncs.find_ratio.restype = ctypes.c_double
+        cfuncs.find_ratio.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        
+        ratios = np.zeros(1 + 2**len_iP)   # results storage
+        
+        sel_array = np.zeros(len(iP))
+        def s_P(i):
+            """local worker function. turns i into a binary number, seperates
+            each digit, packages the number into a numpy array with same shape
+            as flattened P, and adds the number to P"""
+            bin_i = bin(i)[2:]
+            bin_array = np.array(list(bin_i), dtype=int)
+            len_b = len(bin_i)
+            sel_array[-len_b:] = bin_array
+            s_f_P = iP + sel_array
+            return s_f_P
+        
+        
+        #find_ratio_flat = self.find_ratio_flat
+        
+        ratios[0] = self.ratio
+        
+        for i in range(1, 2**len_iP):
+            s_f_P = s_P(i)
+            if np.any(s_f_P>250):
+                ratios[i] = 0
+            else:
+                c_P = s_f_P.ctypes.data
+                ratios[i] = cfuncs.find_ratio(c_P, len_P)
+        
+        arg = np.argmax(ratios)
+        print(arg)
+        self.ratio = ratios[arg]
+        s_f_P = s_P(arg)
+        self.P[:, 0] = s_f_P[:len_P]
+        self.P[1:, 1] = s_f_P[len_P:]
                 
             
         

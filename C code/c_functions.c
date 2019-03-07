@@ -137,3 +137,12 @@ void print_bin(){
 		printf("%d", arr[i]);
 	}
 }
+
+void change_vals(int * num, double * p_rat){
+	// this function is to test if I can change the input variables, so that I can
+	// return multiple variables without having to get my head around returning a struct in python
+	// this works, but the variables are ctypes, so need to be converted back into native python.
+	double rat = *p_rat;
+	*num = *num*2 + 1;
+	*p_rat = rat*rat;
+}
